@@ -5,10 +5,24 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.schemas import AlarmOut, EquipmentDetailOut, EquipmentListOut
-from models import Alarm, Equipment
+from app.schemas import (
+    AlarmOut,
+    EquipmentDetailOut,
+    EquipmentListOut,
+    MaintenanceOut,
+    SensorPointOut,
+)
+from models import Alarm, Equipment, MaintenanceRecord
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
+
+_BUCKETS = {
+    "1m": "1 minute",
+    "5m": "5 minutes",
+    "15m": "15 minutes",
+    "1h": "1 hour",
+}
+_SENSOR_TYPES = ("temperature", "pressure", "speed", "vibration", "current", "flow")
 
 
 @router.get("", response_model=EquipmentListOut)
@@ -64,3 +78,52 @@ def equipment_detail(
     detail.active_alarms = [AlarmOut.model_validate(item) for item in alarms]
     detail.latest_readings = latest
     return detail
+
+
+@router.get("/{equipment_id}/readings", response_model=list[SensorPointOut])
+def equipment_readings(
+    equipment_id: str,
+    sensor_type: str = "temperature",
+    hours: int = Query(24, ge=1, le=168),
+    bucket: str = "5m",
+    db: Session = Depends(get_db),
+) -> list[SensorPointOut]:
+    if db.get(Equipment, equipment_id) is None:
+        raise HTTPException(status_code=404, detail=f"设备不存在: {equipment_id}")
+    if sensor_type not in _SENSOR_TYPES:
+        raise HTTPException(status_code=422, detail=f"非法传感器类型: {sensor_type}")
+    bucket_sql = _BUCKETS.get(bucket)
+    if bucket_sql is None:
+        raise HTTPException(status_code=422, detail=f"非法聚合粒度: {bucket}")
+
+    rows = db.execute(
+        text(
+            "SELECT time_bucket(CAST(:bucket AS interval), timestamp) AS ts, "
+            "avg(value) AS value, 'good' AS quality "
+            "FROM sensor_readings WHERE equipment_id = :eq AND sensor_type = :st "
+            "AND timestamp >= now() - (:hours * interval '1 hour') "
+            "GROUP BY ts ORDER BY ts"
+        ),
+        {"bucket": bucket_sql, "eq": equipment_id, "st": sensor_type, "hours": hours},
+    ).all()
+    return [
+        SensorPointOut(timestamp=row.ts, value=round(float(row.value), 3), quality=row.quality)
+        for row in rows
+    ]
+
+
+@router.get("/{equipment_id}/maintenance", response_model=list[MaintenanceOut])
+def equipment_maintenance(
+    equipment_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> list[MaintenanceOut]:
+    if db.get(Equipment, equipment_id) is None:
+        raise HTTPException(status_code=404, detail=f"设备不存在: {equipment_id}")
+    items = db.scalars(
+        select(MaintenanceRecord)
+        .where(MaintenanceRecord.equipment_id == equipment_id)
+        .order_by(MaintenanceRecord.occurred_at.desc())
+        .limit(limit)
+    ).all()
+    return [MaintenanceOut.model_validate(item) for item in items]

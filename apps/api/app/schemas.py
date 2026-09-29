@@ -71,6 +71,32 @@ class InspectionOut(BaseModel):
     defect_type: str | None = None
 
 
+class QualityTrendPoint(BaseModel):
+    date: str
+    total: int
+    fail_count: int
+    fail_rate: float
+
+
+class AlarmWithEquipmentOut(AlarmOut):
+    equipment_name: str | None = None
+
+
+class MaintenanceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    equipment_id: str
+    maintenance_type: str
+    description: str
+    root_cause: str | None = None
+    actions: str | None = None
+    technician: str | None = None
+    related_alarm_code: str | None = None
+    occurred_at: datetime
+    completed_at: datetime | None = None
+
+
 class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

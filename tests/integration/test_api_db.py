@@ -96,6 +96,62 @@ def test_knowledge_documents_and_search() -> None:
     assert hits[0]["document_title"]
 
 
+def test_quality_trend_series() -> None:
+    response = client.get("/quality/trend", params={"product_id": "PRD-A", "days": 7})
+    assert response.status_code == 200
+    points = response.json()
+    assert len(points) >= 5
+    assert all(point["total"] > 0 for point in points)
+    recent = points[-3:]
+    assert all(point["fail_rate"] >= 0.03 for point in recent), recent
+
+
+def test_alarms_list_with_equipment_name() -> None:
+    response = client.get("/alarms", params={"status": "active", "limit": 20})
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) >= 1
+    assert all("equipment_name" in item for item in items)
+    assert any(item["alarm_code"] == "E102" for item in items)
+
+    eq3 = client.get("/alarms", params={"equipment_id": "EQ-003"}).json()
+    assert all(item["equipment_id"] == "EQ-003" for item in eq3)
+
+
+def test_equipment_readings_series() -> None:
+    response = client.get(
+        "/equipment/EQ-003/readings",
+        params={"sensor_type": "temperature", "hours": 2, "bucket": "5m"},
+    )
+    assert response.status_code == 200
+    points = response.json()
+    assert len(points) >= 12
+    assert max(point["value"] for point in points) > 88
+    assert points[0]["timestamp"] < points[-1]["timestamp"]
+
+    assert (
+        client.get(
+            "/equipment/EQ-003/readings", params={"sensor_type": "hack"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/equipment/EQ-999/readings", params={"sensor_type": "temperature"}
+        ).status_code
+        == 404
+    )
+
+
+def test_equipment_maintenance_records() -> None:
+    response = client.get("/equipment/EQ-003/maintenance")
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) >= 1
+    assert any(item["root_cause"] == "冷却过滤器堵塞" for item in items)
+    assert all(item["equipment_id"] == "EQ-003" for item in items)
+
+
 def test_reports_list_and_detail() -> None:
     created = execute_tool(
         "report.generate",

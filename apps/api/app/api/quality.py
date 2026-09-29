@@ -7,10 +7,42 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.schemas import InspectionOut, QualitySummaryOut
+from app.schemas import InspectionOut, QualitySummaryOut, QualityTrendPoint
 from models import QualityInspection
 
 router = APIRouter(prefix="/quality", tags=["quality"])
+
+
+@router.get("/trend", response_model=list[QualityTrendPoint])
+def quality_trend(
+    product_id: str = "PRD-A",
+    days: int = Query(14, ge=1, le=90),
+    db: Session = Depends(get_db),
+) -> list[QualityTrendPoint]:
+    since = datetime.now(UTC) - timedelta(days=days)
+    day = func.date_trunc("day", QualityInspection.inspection_time).label("day")
+    rows = db.execute(
+        select(
+            day,
+            func.count(),
+            func.sum(case((QualityInspection.result == "fail", 1), else_=0)),
+        )
+        .where(
+            QualityInspection.product_id == product_id,
+            QualityInspection.inspection_time >= since,
+        )
+        .group_by(day)
+        .order_by(day)
+    ).all()
+    return [
+        QualityTrendPoint(
+            date=row[0].date().isoformat(),
+            total=int(row[1] or 0),
+            fail_count=int(row[2] or 0),
+            fail_rate=round(int(row[2] or 0) / int(row[1]), 4) if row[1] else 0.0,
+        )
+        for row in rows
+    ]
 
 
 def _window_stats(db: Session, product_id: str, start: datetime, end: datetime) -> tuple[int, int]:
