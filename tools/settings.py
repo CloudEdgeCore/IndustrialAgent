@@ -1,0 +1,25 @@
+"""Tool 层配置（与 apps/api/app/core/config.py 默认值保持一致）。
+
+Tool 层独立于 API 层可运行（如 python -m tools.rag），因此单独读取环境变量。
+"""
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ToolSettings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    database_url: str = (
+        "postgresql+psycopg://industrial:industrial@localhost:5432/industrial_agent"
+    )
+    tool_database_url: str = (
+        "postgresql+psycopg://tool_ro:tool_ro@localhost:5432/industrial_agent"
+    )
+
+    embedding_base_url: str | None = None
+    embedding_api_key: str | None = None
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+
+
+settings = ToolSettings()
