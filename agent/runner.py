@@ -1,5 +1,6 @@
 """Agent 运行入口（P4 API 层将包装为 SSE 流式接口）。"""
 
+from collections.abc import Sequence
 from uuid import uuid4
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -14,9 +15,10 @@ def run_agent(
     context: dict | None = None,
     model: BaseChatModel | None = None,
     session_id: str | None = None,
+    agents: Sequence[str] = ("equipment",),
 ) -> AgentState:
     chat_model = model or get_chat_model()
-    graph = build_graph(chat_model)
+    graph = build_graph(chat_model, agents=agents)
     initial: AgentState = {
         "session_id": session_id or str(uuid4()),
         "user_query": user_query,
