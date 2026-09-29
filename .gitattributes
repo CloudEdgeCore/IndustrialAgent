@@ -1,0 +1,6 @@
+# 仓库内统一 LF（Windows 工作区由 Git 自行处理）
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
