@@ -12,12 +12,14 @@ from langgraph.graph import END, START, StateGraph
 from agent.equipment.agent import make_node as make_equipment_node
 from agent.process.agent import make_node as make_process_node
 from agent.quality.agent import make_node as make_quality_node
+from agent.report.agent import make_node as make_report_node
 from agent.state import AgentState
 
 NODE_FACTORIES = {
     "equipment": make_equipment_node,
     "process": make_process_node,
     "quality": make_quality_node,
+    "report": make_report_node,
 }
 
 
