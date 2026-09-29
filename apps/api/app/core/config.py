@@ -29,10 +29,10 @@ class Settings(BaseSettings):
     embedding_model: str = "bge-m3"
     embedding_dim: int = 1024
 
-    # LLM（P3 启用，OpenAI-compatible 统一接口）
-    llm_base_url: str | None = None
+    # LLM（P3 启用，OpenAI-compatible 统一接口；默认 Qwen DashScope 兼容模式）
+    llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     llm_api_key: str | None = None
-    llm_model: str = ""
+    llm_model: str = "qwen-plus"
 
 
 settings = Settings()
