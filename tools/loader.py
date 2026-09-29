@@ -11,5 +11,6 @@ def load_all_tools() -> None:
         domain,  # noqa: F401
         tool,  # noqa: F401
     )
+    from tools.timeseries import tool as timeseries_tool  # noqa: F401
 
     _loaded = True
