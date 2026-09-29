@@ -130,6 +130,20 @@ pytest tests/evals                     # pytest 入口
 
 SSE 事件流示例：`data: {"type":"step","label":"已识别：设备故障诊断","status":"done"}` … 最终 `data: {"type":"result","final_answer":"…","report_id":12}`。
 
+### Web 页面（P5 起）
+
+浏览器打开 http://localhost（Next.js + shadcn/ui + ECharts）：
+
+| 页面 | 路径 | 说明 |
+|---|---|---|
+| Overview | `/overview` | KPI、AI 风险摘要（一键跳转分析）、设备健康、不良率趋势、活跃报警、最近分析 |
+| AI 诊断 | `/ai` | SSE 流式执行步骤 + **Evidence 证据区** + 结果卡 / 报告联动（需登录 admin/admin123） |
+| 设备中心 | `/equipment` | 列表（筛选 / 健康度）→ 详情（监控卡片、趋势图、告警、维修记录、AI 诊断入口） |
+| 质量分析 | `/quality` | 不良率趋势、缺陷 Pareto、不良设备分布、AI 洞察与根因分析入口 |
+| 知识库 | `/knowledge` | RAG 混合检索（带引用来源）+ 文档管理 |
+
+其余占位页：工艺分析 / 报告中心（详情 `/reports/[id]` 可用）/ 系统设置。
+
 ### 常用命令
 
 ```bash
@@ -157,5 +171,5 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 - [x] P2 Tool 层
 - [x] P3 Agent 层
 - [x] P4 API 层
-- [ ] P5 Web 层
+- [x] P5 Web 层
 - [ ] P6 打磨与验收

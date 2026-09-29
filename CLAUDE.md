@@ -7,7 +7,7 @@
 
 **基于大模型 Agent 的工业设备故障诊断与质量分析系统**（作品集 / 工业 AI Demo / 企业 PoC）
 
-- 当前状态：P4 API 层完成（2026-09-29），处于 P5 Web 层阶段
+- 当前状态：P5 Web 层完成（2026-09-29），处于 P6 打磨与验收阶段
 - 文档入口：`README.md`
 - 开发计划：`05-开发计划.md`（含阶段 Gate，唯一进度基准）
 - 需求基准：`01-产品需求文档-PRD.md`（`docs/`）
@@ -79,7 +79,7 @@ pytest tests/evals                               # Agent Eval（P3 起）
 ruff check .                                     # 后端 lint
 cd apps/web && pnpm dev                          # 前端开发（http://localhost:3000）
 cd apps/web && pnpm lint && pnpm build           # 前端检查
-git -c http.proxy=http://127.0.0.1:7890 push origin main   # 推送（GitHub 直连不稳，走本机代理）
+git -c http.sslBackend=openssl -c http.proxy=http://127.0.0.1:7890 push origin main   # 推送（GitHub 直连不稳，走本机代理）
 ```
 
 端口约定（避开本机其他项目占用）：Nginx 80 · 后端 8000 · 前端直连 13000 · PostgreSQL 5432 · Redis 宿主 16379（容器内 6379）· MinIO 9000/9001。
