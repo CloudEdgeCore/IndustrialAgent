@@ -9,6 +9,7 @@ def load_all_tools() -> None:
         return
     from tools.analysis import tool as analysis_tool  # noqa: F401
     from tools.rag import tool as rag_tool  # noqa: F401
+    from tools.reports import tool as report_tool  # noqa: F401
     from tools.sql import (
         domain,  # noqa: F401
         tool,  # noqa: F401
