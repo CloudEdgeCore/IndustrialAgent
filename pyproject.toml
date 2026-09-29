@@ -15,6 +15,9 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "psycopg[binary]>=3.2",
+    "pgvector>=0.3",
+    "numpy>=1.26",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
@@ -33,11 +36,14 @@ exclude = ["apps*", "tests*", "docs*", "docker*"]
 testpaths = ["tests"]
 pythonpath = ["apps/api"]
 asyncio_mode = "auto"
+markers = [
+    "integration: 需要 PostgreSQL + 已种子数据的测试（无数据库时自动跳过）",
+]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-exclude = ["alembic/versions"]
+exclude = ["**/alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

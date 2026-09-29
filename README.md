@@ -58,10 +58,22 @@ cd apps/web && pnpm install && pnpm dev            # http://localhost:3000（被
 
 > 本机端口约定（避开其他项目占用）：Nginx 80 · 后端 8000 · 前端直连 13000 · PostgreSQL 5432 · Redis 宿主机 16379（容器内 6379）· MinIO 9000/9001
 
+### 数据初始化（P1 起）
+
+```bash
+docker compose up -d postgres                    # 数据库
+alembic -c apps/api/alembic.ini upgrade head     # 建表 + TimescaleDB hypertable
+python -m data.simulator                         # 生成模拟数据（seed=42，可复现，含场景注入）
+```
+
+- 快速档（CI / 低配机器）：`python -m data.simulator --days 2 --quality-days 5 --history-days 10`
+- 生成场景清单：`data/fixtures/manifest.json`（集成测试依赖，重新种子后自动更新）
+- 内置演示场景：EQ-003 主轴超温（E102）· EQ-024 停机 · LINE-2 压力波动 · PRD-A 不良率 1.8%→4.6%
+
 ### 常用命令
 
 ```bash
-pytest                  # 后端测试（仓库根目录执行）
+pytest                  # 后端测试（含集成测试，无数据库时自动跳过；仓库根目录执行）
 ruff check .            # 后端 lint
 pytest tests/evals      # Agent Eval（P3 起）
 cd apps/web && pnpm lint && pnpm build   # 前端检查
@@ -81,7 +93,7 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 ## 开发状态
 
 - [x] P0 项目初始化
-- [ ] P1 数据层
+- [x] P1 数据层
 - [ ] P2 Tool 层
 - [ ] P3 Agent 层
 - [ ] P4 API 层

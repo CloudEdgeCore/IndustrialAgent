@@ -1,0 +1,11 @@
+[
+  {"code": "E101", "name": "主轴过载", "severity": "critical", "description": "主轴负载超过额定值 120%，持续负载可能损伤主轴轴承", "possible_causes": ["切削参数过大", "刀具磨损", "材料硬度过高"]},
+  {"code": "E102", "name": "主轴温度过高", "severity": "critical", "description": "主轴温度超过 85℃ 阈值，需立即检查冷却系统", "possible_causes": ["冷却系统效率下降", "冷却液不足或过滤器堵塞", "主轴轴承磨损", "温度传感器漂移"]},
+  {"code": "E103", "name": "冷却系统压力异常", "severity": "warning", "description": "冷却液压力偏离正常范围", "possible_causes": ["冷却泵故障", "管路泄漏", "过滤器堵塞"]},
+  {"code": "E201", "name": "液压压力异常", "severity": "warning", "description": "液压系统压力波动超出允许范围", "possible_causes": ["液压阀卡滞", "油路泄漏", "液压泵磨损"]},
+  {"code": "E202", "name": "液压油温过高", "severity": "warning", "description": "液压油温度超过 60℃", "possible_causes": ["冷却器堵塞", "连续高负载运行", "油量不足"]},
+  {"code": "E301", "name": "伺服驱动器故障", "severity": "critical", "description": "伺服驱动器报故障，轴运动停止", "possible_causes": ["驱动器过流", "编码器信号异常", "动力线接触不良"]},
+  {"code": "E401", "name": "气压不足", "severity": "info", "description": "气源压力低于 0.5MPa", "possible_causes": ["空压机输出不足", "管路泄漏", "气源阀门未全开"]},
+  {"code": "E501", "name": "振动超限", "severity": "warning", "description": "设备振动超过 5 mm/s 警戒值", "possible_causes": ["轴承磨损", "动平衡失调", "地脚螺栓松动"]},
+  {"code": "E601", "name": "电机过流", "severity": "critical", "description": "主电机电流超过额定值", "possible_causes": ["负载异常", "电机绕组问题", "供电电压波动"]}
+]

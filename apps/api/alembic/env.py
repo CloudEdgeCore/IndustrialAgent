@@ -15,8 +15,9 @@ database_url = os.environ.get(
 )
 config.set_main_option("sqlalchemy.url", database_url)
 
-# P1 数据层接入后：target_metadata = models.Base.metadata
-target_metadata = None
+from models import Base  # noqa: E402
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

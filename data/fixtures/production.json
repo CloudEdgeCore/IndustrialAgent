@@ -1,0 +1,16 @@
+{
+  "lines": [
+    {"line_id": "LINE-1", "name": "1 号产线"},
+    {"line_id": "LINE-2", "name": "2 号产线"},
+    {"line_id": "LINE-3", "name": "3 号产线"}
+  ],
+  "products": [
+    {"product_id": "PRD-A", "name": "A 产品", "production_line": "LINE-1", "equipment_type": "cnc"},
+    {"product_id": "PRD-B", "name": "B 产品", "production_line": "LINE-2", "equipment_type": "injection_molding"},
+    {"product_id": "PRD-C", "name": "C 产品", "production_line": "LINE-3", "equipment_type": "assembly_line"}
+  ],
+  "shifts": [
+    {"shift": "day", "name": "白班"},
+    {"shift": "night", "name": "夜班"}
+  ]
+}

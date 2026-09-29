@@ -1,0 +1,8 @@
+[
+  {"code": "surface_crack", "name": "表面裂纹", "category": "外观", "description": "零件表面出现裂纹"},
+  {"code": "dimension_deviation", "name": "尺寸偏差", "category": "尺寸", "description": "关键尺寸超出公差范围"},
+  {"code": "burr", "name": "毛刺", "category": "外观", "description": "边缘残留毛刺未去除"},
+  {"code": "porosity", "name": "气孔", "category": "内部", "description": "内部或表面存在气孔"},
+  {"code": "scratch", "name": "划痕", "category": "外观", "description": "表面划伤"},
+  {"code": "color_deviation", "name": "色差", "category": "外观", "description": "颜色与标准样板存在偏差"}
+]
