@@ -89,6 +89,30 @@ python -m tools.rag ingest                # 导入知识库（6 篇示例文档 
 python -m tools.rag search "E102 怎么处理" # 检索调试
 ```
 
+### Agent 层（P3 起）
+
+1 Router + 4 专业 Agent（LangGraph 条件边编排，架构红线锁定）：
+
+```text
+用户问题 → Router（意图路由）
+         → Equipment / Process / Quality（工具循环 → Evidence-based 结论）
+         → Report（结论合并 → 结构化报告落库）
+```
+
+- LLM：OpenAI-compatible 统一接口（默认 Qwen DashScope 兼容模式，`.env` 配置 `LLM_API_KEY` 即可）
+- 每个 Agent 只能调用权限矩阵内的工具；输出含数值 + 来源，可追溯
+- 运行入口：`agent.runner.run_agent(query, context)`（P4 包装为 SSE API）
+
+### Agent Eval（P3 起）
+
+```bash
+python tests/evals/runner.py           # 离线模式（无需 Key，CI 用）
+python tests/evals/runner.py --llm     # LLM 模式（需 LLM_API_KEY，产出真实指标）
+pytest tests/evals                     # pytest 入口
+```
+
+基线（CLAUDE.md §9）：意图 ≥90% · 工具成功率 ≥95% · RAG 引用 ≥90%；当前离线模式三项 100%（32 条测试集）。
+
 ### 常用命令
 
 ```bash
@@ -114,7 +138,7 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 - [x] P0 项目初始化
 - [x] P1 数据层
 - [x] P2 Tool 层
-- [ ] P3 Agent 层
+- [x] P3 Agent 层
 - [ ] P4 API 层
 - [ ] P5 Web 层
 - [ ] P6 打磨与验收
