@@ -70,6 +70,25 @@ python -m data.simulator                         # 生成模拟数据（seed=42�
 - 生成场景清单：`data/fixtures/manifest.json`（集成测试依赖，重新种子后自动更新）
 - 内置演示场景：EQ-003 主轴超温（E102）· EQ-024 停机 · LINE-2 压力波动 · PRD-A 不良率 1.8%→4.6%
 
+### 工具层（P2 起）
+
+7 个工具全部经 Registry → 权限矩阵 → 审计日志 执行（`tools/loader.py` 加载）：
+
+| 工具 | 说明 |
+|---|---|
+| `sql.query` | 结构化白名单查询（Planner → Builder → Validator → 只读库） |
+| `sql.alarm_search` | 报警代码解释 / 报警事件检索 |
+| `sql.history_case` | 历史维修案例检索 |
+| `timeseries.query` | 时序 series / stats / anomaly_windows（TimescaleDB） |
+| `analysis.run` | 白名单统计（相关性 / z-score / IQR / 趋势 / Isolation Forest / Pareto） |
+| `rag.search` | 知识库混合检索（向量+关键词 RRF + Rerank，带引用元数据） |
+| `report.generate` | Evidence-based 报告生成与落库 |
+
+```bash
+python -m tools.rag ingest                # 导入知识库（6 篇示例文档 → 22 分块）
+python -m tools.rag search "E102 怎么处理" # 检索调试
+```
+
 ### 常用命令
 
 ```bash
@@ -94,7 +113,7 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 
 - [x] P0 项目初始化
 - [x] P1 数据层
-- [ ] P2 Tool 层
+- [x] P2 Tool 层
 - [ ] P3 Agent 层
 - [ ] P4 API 层
 - [ ] P5 Web 层

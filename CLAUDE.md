@@ -7,7 +7,7 @@
 
 **基于大模型 Agent 的工业设备故障诊断与质量分析系统**（作品集 / 工业 AI Demo / 企业 PoC）
 
-- 当前状态：P1 数据层完成（2026-09-29），处于 P2 Tool 层阶段
+- 当前状态：P2 Tool 层完成（2026-09-29），处于 P3 Agent 层阶段
 - 文档入口：`README.md`
 - 开发计划：`05-开发计划.md`（含阶段 Gate，唯一进度基准）
 - 需求基准：`01-产品需求文档-PRD.md`（`docs/`）
@@ -72,6 +72,7 @@ docker compose up -d                             # 全环境（Web: http://local
 pip install -e ".[dev]"                          # 首次：后端依赖（仓库根目录）
 alembic -c apps/api/alembic.ini upgrade head     # 数据库迁移（P1 起）
 python -m data.simulator                         # 生成模拟数据（固定种子，含演示场景）
+python -m tools.rag ingest                       # 导入知识库文档（P2 起）
 cd apps/api && uvicorn app.main:app --reload     # 后端开发（http://localhost:8000）
 pytest                                           # 后端测试（仓库根目录执行，含集成测试）
 pytest tests/evals                               # Agent Eval（P3 起）
