@@ -10,6 +10,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from agent.events import emit_step
 from agent.state import AgentState
 
 NAME = "router"
@@ -179,6 +180,11 @@ def make_node(model: BaseChatModel):
         if decision.need_report:
             run_order.append("report")
 
+        emit_step(
+            f"已识别：{TASK_LABELS[decision.task_type]}",
+            status="done",
+            detail=decision.reason,
+        )
         return {
             "task_type": decision.task_type,
             "agents": list(decision.agents),

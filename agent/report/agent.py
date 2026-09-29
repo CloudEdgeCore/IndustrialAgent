@@ -10,6 +10,7 @@ from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from agent.events import emit_step
 from agent.state import AgentState
 from tools.base import ToolContext, ToolError
 from tools.executor import execute_tool
@@ -172,6 +173,7 @@ def make_node(model: BaseChatModel):
             status = "error"
             final_answer = f"报告生成失败：{exc}"
 
+        emit_step("生成报告", status=status, tool="report.generate")
         return {
             "report": report,
             "steps": [

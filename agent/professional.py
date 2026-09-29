@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
+from agent.events import emit_step
 from agent.models import AgentConclusion
 from agent.settings import settings
 from agent.state import AgentState
@@ -106,13 +107,13 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                     row_count = None
                     status = "error"
                 messages.append(ToolMessage(content=content, tool_call_id=call["id"]))
-                steps.append(
-                    {
-                        "label": STEP_LABELS.get(name, f"调用 {name}"),
-                        "tool": name,
-                        "status": status,
-                    }
-                )
+                step = {
+                    "label": STEP_LABELS.get(name, f"调用 {name}"),
+                    "tool": name,
+                    "status": status,
+                }
+                steps.append(step)
+                emit_step(step["label"], status=status, tool=name)
                 tool_results.append(
                     {
                         "tool": name,
