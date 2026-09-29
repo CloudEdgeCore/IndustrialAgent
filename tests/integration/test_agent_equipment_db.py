@@ -118,6 +118,7 @@ def test_equipment_agent_end_to_end(manifest: dict, scripted_llm) -> None:
         "3 号设备主轴温度连续超过 85℃，同时出现 E102 报警，帮我分析原因。",
         context={"equipment_id": "EQ-003"},
         model=model,
+        agents=("equipment",),
     )
 
     labels = [step["label"] for step in result["steps"]]

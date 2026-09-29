@@ -15,7 +15,7 @@ def run_agent(
     context: dict | None = None,
     model: BaseChatModel | None = None,
     session_id: str | None = None,
-    agents: Sequence[str] = ("equipment",),
+    agents: Sequence[str] | None = None,
 ) -> AgentState:
     chat_model = model or get_chat_model()
     graph = build_graph(chat_model, agents=agents)
