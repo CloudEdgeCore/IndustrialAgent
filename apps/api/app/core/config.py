@@ -34,5 +34,9 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str = "qwen-plus"
 
+    # 认证（生产环境必须通过环境变量覆盖 JWT_SECRET）
+    jwt_secret: str = "dev-secret-change-me"
+    jwt_expire_minutes: int = 720
+
 
 settings = Settings()

@@ -70,9 +70,19 @@ def require_seeded_db() -> None:
         conn.close()
 
 
-def _collect_events(client: TestClient, payload: dict) -> list[dict]:
+@pytest.fixture(scope="module")
+def auth_headers() -> dict:
+    client = TestClient(app)
+    response = client.post(
+        "/auth/login", json={"username": "admin", "password": "admin123"}
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def _collect_events(client: TestClient, payload: dict, headers: dict) -> list[dict]:
     events: list[dict] = []
-    with client.stream("POST", "/agent/chat", json=payload) as response:
+    with client.stream("POST", "/agent/chat", json=payload, headers=headers) as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
         for line in response.iter_lines():
@@ -82,7 +92,7 @@ def _collect_events(client: TestClient, payload: dict) -> list[dict]:
 
 
 def test_agent_chat_streams_steps_then_result(
-    manifest: dict, scripted_llm
+    manifest: dict, scripted_llm, auth_headers: dict
 ) -> None:
     scenario = manifest["scenarios"]["equipment_temperature"]
     start = datetime.fromisoformat(scenario["window_start"]) - timedelta(minutes=5)
@@ -121,6 +131,7 @@ def test_agent_chat_streams_steps_then_result(
                 "query": "3 号设备主轴温度超过 85℃，出现 E102 报警，帮我分析并生成报告。",
                 "context": {"equipment_id": "EQ-003"},
             },
+            auth_headers,
         )
     finally:
         del app.state.agent_model
@@ -144,18 +155,20 @@ def test_agent_chat_streams_steps_then_result(
     assert result["evidence_count"] == 1
     session_id = result["session_id"]
 
-    messages = client.get(f"/agent/sessions/{session_id}/messages").json()
+    messages = client.get(
+        f"/agent/sessions/{session_id}/messages", headers=auth_headers
+    ).json()
     assert len(messages) == 2
     assert messages[0]["role"] == "user"
     assert messages[1]["role"] == "assistant"
     assert "已生成报告" in messages[1]["content"]
 
 
-def test_agent_chat_reports_error_event(scripted_llm) -> None:
+def test_agent_chat_reports_error_event(scripted_llm, auth_headers: dict) -> None:
     app.state.agent_model = scripted_llm([])
     try:
         client = TestClient(app)
-        events = _collect_events(client, {"query": "测试错误路径"})
+        events = _collect_events(client, {"query": "测试错误路径"}, auth_headers)
     finally:
         del app.state.agent_model
 

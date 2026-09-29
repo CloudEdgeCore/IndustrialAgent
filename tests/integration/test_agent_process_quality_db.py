@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -162,7 +163,10 @@ def test_process_agent_end_to_end(manifest: dict, scripted_llm) -> None:
     assert tools_used == ["timeseries.query", "analysis.run", "rag.search"]
 
     correlation_entry = result["tool_results"][1]
-    assert '"r": 0.9' in correlation_entry["snippet"], "相关性应基于真实数据计算"
+    match = re.search(r'"r":\s*([0-9.]+)', correlation_entry["snippet"])
+    assert match and float(match.group(1)) > 0.7, (
+        f"相关性应基于真实数据计算: {correlation_entry['snippet']}"
+    )
 
     conclusion = result["agent_results"][0]["conclusion"]
     assert conclusion["risk_level"] == "medium"

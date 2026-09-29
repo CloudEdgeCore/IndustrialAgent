@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Iterator
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -9,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.runner import run_agent_streaming
+from app.api.auth import get_current_user
 from app.db import get_db
 from app.schemas import ChatRequest, MessageOut
 from app.services.sessions import persist_agent_run
-from models import AgentMessage
+from models import AgentMessage, User
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -28,7 +30,11 @@ def _sse(event: dict) -> str:
 
 
 @router.post("/chat")
-def agent_chat(payload: ChatRequest, request: Request) -> StreamingResponse:
+def agent_chat(
+    payload: ChatRequest,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+) -> StreamingResponse:
     model = getattr(request.app.state, "agent_model", None)
 
     def stream() -> Iterator[str]:
@@ -48,7 +54,11 @@ def agent_chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[MessageOut])
-def session_messages(session_id: str, db: Session = Depends(get_db)) -> list[MessageOut]:
+def session_messages(
+    session_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> list[MessageOut]:
     items = db.scalars(
         select(AgentMessage)
         .where(AgentMessage.session_id == session_id)

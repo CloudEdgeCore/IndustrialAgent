@@ -149,6 +149,7 @@ def load_all(
     with psycopg.connect(normalize_database_url(database_url)) as conn:
         with conn.cursor() as cur:
             cur.execute(TRUNCATE_SQL)
+            _ensure_demo_user(cur)
             for table in COPY_ORDER:
                 rows = data.get(table)
                 if rows is None:
@@ -156,3 +157,16 @@ def load_all(
                 counts[table] = copy_rows(cur, table, rows)
         conn.commit()
     return counts
+
+
+def _ensure_demo_user(cur: psycopg.Cursor) -> None:
+    """演示账号（admin / admin123），已存在则跳过。"""
+    from tools.security import hash_password
+
+    cur.execute("SELECT 1 FROM users WHERE username = %s", ("admin",))
+    if cur.fetchone() is None:
+        cur.execute(
+            "INSERT INTO users (username, password_hash, display_name, role, is_active) "
+            "VALUES (%s, %s, %s, %s, TRUE)",
+            ("admin", hash_password("admin123"), "系统管理员", "admin"),
+        )
