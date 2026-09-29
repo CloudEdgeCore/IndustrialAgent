@@ -113,6 +113,23 @@ pytest tests/evals                     # pytest 入口
 
 基线（CLAUDE.md §9）：意图 ≥90% · 工具成功率 ≥95% · RAG 引用 ≥90%；当前离线模式三项 100%（32 条测试集）。
 
+### API 接口（P4 起）
+
+经 Nginx（`/api/` 前缀）或后端直连（:8000）：
+
+| 接口 | 说明 |
+|---|---|
+| `POST /auth/login` | 登录（演示账号 **admin / admin123**）→ JWT |
+| `GET /auth/me` · `POST /auth/logout` | 当前用户 / 登出（Redis 会话吊销，不可用时降级为无状态 JWT） |
+| `GET /equipment` · `GET /equipment/{id}` | 设备列表 / 详情（含活跃报警与最新传感器读数） |
+| `GET /quality/summary` · `GET /quality/inspections` | 质量汇总（不良率 / Pareto / 设备分布）与明细 |
+| `GET /knowledge/documents` · `POST /knowledge/search` | 知识库列表与混合检索 |
+| `GET /reports` · `GET /reports/{id}` | 报告列表与详情 |
+| `POST /agent/chat`（SSE） | Agent 流式对话（需登录；步骤事件 → 结果事件） |
+| `GET /agent/sessions/{id}/messages` | 会话消息（需登录） |
+
+SSE 事件流示例：`data: {"type":"step","label":"已识别：设备故障诊断","status":"done"}` … 最终 `data: {"type":"result","final_answer":"…","report_id":12}`。
+
 ### 常用命令
 
 ```bash
@@ -139,6 +156,6 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 - [x] P1 数据层
 - [x] P2 Tool 层
 - [x] P3 Agent 层
-- [ ] P4 API 层
+- [x] P4 API 层
 - [ ] P5 Web 层
 - [ ] P6 打磨与验收
