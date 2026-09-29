@@ -78,6 +78,7 @@ pytest tests/evals                               # Agent Eval（P3 起）
 ruff check .                                     # 后端 lint
 cd apps/web && pnpm dev                          # 前端开发（http://localhost:3000）
 cd apps/web && pnpm lint && pnpm build           # 前端检查
+git -c http.proxy=http://127.0.0.1:7890 push origin main   # 推送（GitHub 直连不稳，走本机代理）
 ```
 
 端口约定（避开本机其他项目占用）：Nginx 80 · 后端 8000 · 前端直连 13000 · PostgreSQL 5432 · Redis 宿主 16379（容器内 6379）· MinIO 9000/9001。
@@ -89,6 +90,7 @@ cd apps/web && pnpm lint && pnpm build           # 前端检查
 3. 每个 Tool / Agent 完成即写测试；**不写测试不算完成**。
 4. 模拟数据必须固定随机种子（可复现）。
 5. 提交信息格式：`阶段-模块: 描述`（例：`P2-sql: 实现 Query Validator`）。
+6. **每完成一步（一个任务 / 子任务）立即提交并推送**（命令见 §7），不攒批量；推送失败时重试，不得跳过。
 
 ## 9. 验收基线（量化，P3 / P6 对照）
 
