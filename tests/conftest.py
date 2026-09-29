@@ -1,12 +1,16 @@
 """测试公共设施：脚本化假 LLM（按顺序返回预设消息，用于离线/确定性测试）。"""
 
+import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 
 class ScriptedChatModel(BaseChatModel):

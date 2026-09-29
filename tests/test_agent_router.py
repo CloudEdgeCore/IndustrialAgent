@@ -67,7 +67,12 @@ def test_heuristic_route_cases() -> None:
     assert knowledge.agents == []
 
     alarm_question = heuristic_route("E102 是什么报警")
-    assert alarm_question.agents == ["equipment"]
+    assert alarm_question.task_type == "knowledge_qa"
+    assert alarm_question.agents == []
+
+    report = heuristic_route("帮我生成一份生产日报")
+    assert report.task_type == "report"
+    assert report.need_report is True
 
 
 def test_router_node_with_llm_decision(scripted_llm) -> None:

@@ -32,3 +32,6 @@ miniodata/
 
 # 种子数据运行产物（可重新生成）
 data/fixtures/manifest.json
+
+# Eval 运行产物
+tests/evals/report.json

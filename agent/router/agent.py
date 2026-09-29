@@ -69,15 +69,61 @@ def _extract_json(text: str) -> dict:
     return json.loads(stripped[start : end + 1])
 
 
+_KNOWLEDGE_MARKERS = (
+    "怎么处理",
+    "如何处理",
+    "怎么办",
+    "是什么",
+    "什么原因",
+    "可能原因",
+    "可能的原因",
+    "怎么判定",
+    "如何判定",
+    "多久",
+    "周期",
+    "怎么排查",
+    "如何排查",
+    "是多少",
+    "多少",
+    "什么水平",
+)
+_KNOWLEDGE_EXCLUDE = ("分析", "查询", "检查", "统计", "对比", "生成", "分布", "趋势", "情况")
+
+
+def _is_knowledge_question(query: str) -> bool:
+    if not any(marker in query for marker in _KNOWLEDGE_MARKERS):
+        return False
+    return not any(word in query for word in _KNOWLEDGE_EXCLUDE)
+
+
 def heuristic_route(query: str) -> RouteDecision:
+    if _is_knowledge_question(query):
+        return RouteDecision(
+            task_type="knowledge_qa",
+            agents=[],
+            need_report=False,
+            reason="关键词启发式路由：知识问答（LLM 路由不可用）",
+        )
+
     agents: list[str] = []
-    if any(k in query for k in ("设备", "报警", "温度", "振动", "主轴", "停机", "维修")):
+    if any(
+        k in query for k in ("设备", "报警", "温度", "振动", "主轴", "停机", "维修", "故障")
+    ):
         agents.append("equipment")
     if any(k in query for k in ("工艺", "产线", "参数", "压力", "流量", "波动", "阀门")):
         agents.append("process")
     if any(k in query for k in ("质量", "不良", "缺陷", "批次", "裂纹", "合格率")):
         agents.append("quality")
-    need_report = "报告" in query or len(agents) > 1
+
+    report_requested = any(k in query for k in ("报告", "日报", "周报"))
+    need_report = report_requested or len(agents) > 1
+    if not agents and report_requested:
+        return RouteDecision(
+            task_type="report",
+            agents=[],
+            need_report=True,
+            reason="关键词启发式路由：报告生成（LLM 路由不可用）",
+        )
     if len(agents) > 1:
         task_type = "mixed"
     elif agents:
