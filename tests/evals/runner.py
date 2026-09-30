@@ -225,11 +225,19 @@ def save_report(report: EvalReport, path: Path = REPORT_PATH) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Agent Eval 评测")
     parser.add_argument("--llm", action="store_true", help="使用真实 LLM（需 API Key）")
+    parser.add_argument("--limit", type=int, default=0, help="仅评测前 N 条用例（0=全部）")
     args = parser.parse_args()
 
-    report = run_llm_eval() if args.llm else run_offline_eval()
+    cases = load_testset()
+    if args.limit > 0:
+        cases = cases[: args.limit]
+    report = run_llm_eval(cases) if args.llm else run_offline_eval(cases)
     print(report.summary())
     print("基线:", report.meets_baseline())
+    for item in report.details:
+        if not item["intent_hit"] or any(not t["ok"] for t in item["tools"]):
+            print(f"  用例 {item['id']}: intent={item['intent_actual']} "
+                  f"(期望 {item['intent_expected']}), tools={item['tools']}")
     print("报告 ->", save_report(report))
 
 

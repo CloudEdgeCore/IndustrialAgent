@@ -1,10 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = Path(__file__).resolve().parents[4] / ".env"
 
 
 class Settings(BaseSettings):
     """全局配置。环境变量优先，未设置时使用本地开发默认值。"""
 
-    model_config = SettingsConfigDict(extra="ignore")
+    model_config = SettingsConfigDict(
+        extra="ignore", env_file=str(_ENV_FILE), env_file_encoding="utf-8"
+    )
 
     app_name: str = "Industrial AI Agent API"
     version: str = "0.1.0"

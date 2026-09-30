@@ -20,7 +20,15 @@ PROMPT = """你是工艺分析 Agent（Process Agent），负责工艺参数分�
 2. 用 analysis.run 做参数相关性分析（例如压力与阀门开度）与异常检测；
 3. 用 sql.query 检查同产线设备报警与批次数据，交叉验证；
 4. 用 rag.search 检索工艺规范确认判定依据；
-5. 所有结论必须引用工具返回的具体数值与来源，禁止编造。"""
+5. 所有结论必须引用工具返回的具体数值与来源，禁止编造。
+
+工具调用要点：
+- timeseries.query：kind=process，entity_id 形如 LINE-2，
+  metric 取 temperature / pressure / speed / flow / valve_opening；
+- analysis.run：数值数组必须直接内联传入（x=[8.1, 8.3, ...]，
+  相关性分析需 y 与 x 等长），值从 timeseries.query 结果中提取；
+  参数错误重试不超过 2 次，之后改用 describe 或直接引用原始数值；
+- 结论中的相关性 / 波动判断必须来自 analysis.run 的真实输出。"""
 
 
 def make_node(model: BaseChatModel):

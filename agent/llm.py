@@ -21,5 +21,6 @@ def get_chat_model(**overrides: object) -> ChatOpenAI:
         api_key=settings.llm_api_key,
         temperature=overrides.pop("temperature", settings.llm_temperature),
         timeout=overrides.pop("timeout", settings.llm_timeout),
+        max_retries=2,
         **overrides,
     )

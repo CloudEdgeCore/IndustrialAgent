@@ -3,11 +3,17 @@
 Tool 层独立于 API 层可运行（如 python -m tools.rag），因此单独读取环境变量。
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class ToolSettings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore")
+    model_config = SettingsConfigDict(
+        extra="ignore", env_file=str(_ENV_FILE), env_file_encoding="utf-8"
+    )
 
     database_url: str = (
         "postgresql+psycopg://industrial:industrial@localhost:5432/industrial_agent"
