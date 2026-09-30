@@ -144,7 +144,21 @@ SSE 事件流示例：`data: {"type":"step","label":"已识别：设备故障诊
 
 其余占位页：工艺分析 / 报告中心（详情 `/reports/[id]` 可用）/ 系统设置。
 
-### 常用命令
+### 架构一览
+
+```text
+Web (Next.js)  ──SSE/REST──▶  Nginx :80
+                               ├──▶ FastAPI :8000        ──▶ PostgreSQL + TimescaleDB + pgvector
+                               └──▶ Agent Orchestrator   ──▶ Redis / MinIO
+                                        │
+        Router ─▶ Equipment / Process / Quality ─▶ Report
+                                        │ Tool Calling（白名单 + 权限矩阵 + 审计）
+                    SQL · TimeSeries · RAG · Analysis · Alarm/Case · Report
+```
+
+> 演示剧本（场景 A~D 逐步操作）：`docs/DEMO.md`
+
+## 常用命令
 
 ```bash
 pytest                  # 后端测试（含集成测试，无数据库时自动跳过；仓库根目录执行）
@@ -163,6 +177,20 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 | `docs/02-架构设计文档.md` | 系统架构 |
 | `docs/03-技术选型文档.md` | 技术选型 |
 | `docs/04-Web页面设计文档.md` | 页面设计 |
+
+## 验收对照（PRD §11）
+
+| 验收项 | 状态 | 证据 |
+|---|---|---|
+| 自然语言查询设备 | ✅ | AI 诊断实测（真实 Qwen：温度峰值 92℃、流量 18→14.9 L/min 证据链） |
+| Agent 正确选择工具 | ✅ | 意图路由 + 权限矩阵；Eval 工具成功率 100%（离线 29/29） |
+| 读取设备时序数据 | ✅ | TimescaleDB hypertable，series/stats/anomaly_windows |
+| 质量数据统计 | ✅ | 不良率 4.5% vs 基线 1.8%、Pareto、设备/班次分布（API + 页面） |
+| 知识回答有引用来源 | ✅ | RAG 混合检索带 文档/章节/版本 引用；Eval 引用正确率 100%（18/18） |
+| 生成完整诊断报告 | ✅ | Evidence-based 报告落库 + Markdown 导出/打印 |
+| ≥30 问测试集 | ✅ | `tests/evals/testset.jsonl` 32 条 |
+| 意图 ≥90% / 工具 ≥95% / 引用 ≥90% | ✅ | 离线 Eval 三项 100%；LLM 模式 Eval 见 `tests/evals/runner.py --llm` |
+| 关键结果可追溯 | ✅ | 每条结论含数值 + 来源（工具/表/文档），audit 日志记录每次调用 |
 
 ## 开发状态
 
