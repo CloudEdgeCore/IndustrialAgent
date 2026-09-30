@@ -179,4 +179,10 @@ def test_reports_list_and_detail() -> None:
     assert detail.json()["title"] == "API 测试报告"
     assert "## 一、问题概述" in detail.json()["content_markdown"]
 
+    export = client.get(f"/reports/{report_id}/export")
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in export.headers["content-disposition"]
+    assert "## 四、根因候选" in export.text
+
     assert client.get("/reports/999999").status_code == 404

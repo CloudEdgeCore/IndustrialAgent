@@ -1,6 +1,7 @@
 """报告中心 API。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -34,3 +35,18 @@ def report_detail(report_id: int, db: Session = Depends(get_db)) -> ReportDetail
     if report is None:
         raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
     return ReportDetailOut.model_validate(report)
+
+
+@router.get("/{report_id}/export")
+def export_report(report_id: int, db: Session = Depends(get_db)) -> Response:
+    """Markdown 导出（PDF 由前端浏览器打印实现）。"""
+    report = db.get(Report, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
+    return Response(
+        content=report.content_markdown or "",
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="report_{report_id}.md"'
+        },
+    )
