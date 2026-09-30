@@ -6,11 +6,11 @@
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 
 from tools.base import ToolValidationError
 from tools.sql.models import Filter, Metric, OrderBy, StructuredQuery, TimeRange
 from tools.sql.schema import DATASETS, DatasetSpec
+from tools.timeutils import parse_relative
 
 MAX_LIMIT = 1000
 _ALIAS_RE = re.compile(r"^[a-z_][a-z0-9_]{0,31}$")
@@ -25,25 +25,6 @@ class PlannedQuery:
     metrics: list[Metric]
     order_by: list[OrderBy]
     limit: int
-
-
-def _relative_window(relative: str, now: datetime) -> tuple[datetime, datetime]:
-    if relative == "last_1h":
-        return now - timedelta(hours=1), now
-    if relative == "last_24h":
-        return now - timedelta(hours=24), now
-    if relative == "last_3d":
-        return now - timedelta(days=3), now
-    if relative == "last_7d":
-        return now - timedelta(days=7), now
-    if relative == "last_30d":
-        return now - timedelta(days=30), now
-    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if relative == "today":
-        return day0, now
-    if relative == "yesterday":
-        return day0 - timedelta(days=1), day0
-    raise ToolValidationError(f"未知时间范围: {relative}")
 
 
 def _validate_metric(metric: Metric, spec: DatasetSpec) -> None:
@@ -134,7 +115,13 @@ def _time_filters(time_range: TimeRange, spec: DatasetSpec) -> list[Filter]:
     if field not in spec.columns:
         raise ToolValidationError(f"时间字段不在白名单: {field}")
     if time_range.relative:
-        start, end = _relative_window(time_range.relative, datetime.now(UTC))
+        window = parse_relative(time_range.relative)
+        if window is None:
+            raise ToolValidationError(
+                f"未知时间范围: {time_range.relative}"
+                "（支持 last_1h/last_24h/last_Nm/last_Nh/last_Nd/today/yesterday）"
+            )
+        start, end = window
     else:
         start, end = time_range.start, time_range.end
     if start is None and end is None:

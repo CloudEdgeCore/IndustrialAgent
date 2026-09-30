@@ -15,8 +15,33 @@ def test_registered() -> None:
 
 
 def test_entity_and_metric_validation() -> None:
-    with pytest.raises(ValueError, match="非法设备编号"):
-        TimeSeriesParams(kind="sensor", entity_id="EQ-3", metric="temperature")
+    # 规范化：eq3 / EQ003 / line-02 → EQ-003 / LINE-2（真实 LLM 常见写法）
+    assert (
+        TimeSeriesParams(kind="sensor", entity_id="eq3", metric="temperature").entity_id
+        == "EQ-003"
+    )
+    assert (
+        TimeSeriesParams(kind="sensor", entity_id="EQ005", metric="Temperature").metric
+        == "temperature"
+    )
+    assert (
+        TimeSeriesParams(kind="process", entity_id="line-02", metric="valve").entity_id
+        == "LINE-2"
+    )
+    # 指标别名：coolant_flow → flow
+    assert (
+        TimeSeriesParams(kind="sensor", entity_id="EQ-003", metric="coolant_flow").metric
+        == "flow"
+    )
+    # 灵活相对时间：last_3h 合法 / 非法值报错
+    TimeSeriesParams(
+        kind="sensor", entity_id="EQ-003", metric="temperature", relative="last_3h"
+    )
+    with pytest.raises(ValueError, match="非法相对时间"):
+        TimeSeriesParams(
+            kind="sensor", entity_id="EQ-003", metric="temperature", relative="just_now"
+        )
+    # 非法输入仍拒绝
     with pytest.raises(ValueError, match="非法设备编号"):
         TimeSeriesParams(
             kind="sensor", entity_id="EQ-003; DROP TABLE x", metric="temperature"

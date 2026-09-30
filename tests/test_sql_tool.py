@@ -91,6 +91,20 @@ def test_time_range_relative_adds_filter() -> None:
     assert params["p0"].tzinfo is not None
 
 
+def test_time_range_flexible_relative() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="alarms", time_range=TimeRange(relative="last_2h"), limit=5
+        )
+    )
+    sql, params = build(planned)
+    assert "occurred_at >= %(p0)s" in sql
+    assert isinstance(params["p0"], datetime)
+
+    with pytest.raises(ToolValidationError, match="未知时间范围"):
+        plan(StructuredQuery(dataset="alarms", time_range=TimeRange(relative="last_2x")))
+
+
 def test_time_range_explicit() -> None:
     start = datetime(2026, 9, 1, tzinfo=UTC)
     end = datetime(2026, 9, 29, tzinfo=UTC)

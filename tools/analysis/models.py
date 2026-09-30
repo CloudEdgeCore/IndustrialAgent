@@ -1,8 +1,10 @@
 """Analysis Tool 参数模型（白名单分析能力，架构 §10）。"""
 
+import ast
+import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MAX_POINTS = 50_000
 
@@ -29,6 +31,48 @@ class AnalysisParams(BaseModel):
     z_threshold: float = Field(default=3.0, gt=0)
     iqr_k: float = Field(default=1.5, gt=0)
     contamination: float = Field(default=0.05, gt=0, lt=0.5)
+
+    @field_validator("x", "y", mode="before")
+    @classmethod
+    def _coerce_series(cls, value: object) -> object:
+        """容错：真实 LLM 常把数组序列化为字符串（如 '[1.2, 1.3]' 或 '1.2,1.3'）。"""
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, str):
+            text = value.strip()
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed = parser(text)
+                except Exception:  # noqa: BLE001 - 继续尝试下一种解析
+                    continue
+                if isinstance(parsed, (list, tuple)):
+                    return list(parsed)
+            parts = [part for part in text.strip("[]() ").split(",") if part.strip()]
+            if parts:
+                try:
+                    return [float(part) for part in parts]
+                except ValueError:
+                    pass
+            raise ValueError(
+                "数值数组需为列表或形如 '[1.2, 1.3]' / '1.2,1.3' 的字符串"
+            )
+        return value
+
+    @field_validator("labels", mode="before")
+    @classmethod
+    def _coerce_labels(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed = parser(text)
+                except Exception:  # noqa: BLE001
+                    continue
+                if isinstance(parsed, (list, tuple)):
+                    return [str(item) for item in parsed]
+        return value
 
     @model_validator(mode="after")
     def _validate(self) -> "AnalysisParams":

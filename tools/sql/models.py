@@ -31,7 +31,11 @@ class OrderBy(BaseModel):
 
 class TimeRange(BaseModel):
     field: str | None = Field(default=None, description="默认数据集时间字段")
-    relative: RelativeRange | None = None
+    relative: str | None = Field(
+        default=None,
+        description="相对时间：last_1h/last_24h/last_3d/last_7d/last_30d/"
+        "last_Nm/last_Nh/last_Nd/today/yesterday",
+    )
     start: datetime | None = None
     end: datetime | None = None
 

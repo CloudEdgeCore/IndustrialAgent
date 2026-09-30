@@ -115,6 +115,19 @@ def test_validation_errors() -> None:
         run("describe", x=[1.0] * 50_001)
 
 
+def test_series_string_coercion() -> None:
+    """真实 LLM 常把数组传成字符串：应容错解析。"""
+    data = run("describe", x="[1.0, 2.0, 3.0]")
+    assert data["count"] == 3
+    assert data["mean"] == 2.0
+
+    data2 = run("correlation", x="1.0,2.0,3.0", y="2,4,6")
+    assert data2["r"] == pytest.approx(1.0, abs=1e-3)
+
+    data3 = run("pareto", labels="['a', 'b']", x="[3, 1]")
+    assert data3["items"][0]["label"] == "a"
+
+
 def test_permission_matrix() -> None:
     with pytest.raises(PermissionDeniedError):
         execute_tool("analysis.run", {"op": "describe", "x": [1]}, ToolContext(agent="router"))

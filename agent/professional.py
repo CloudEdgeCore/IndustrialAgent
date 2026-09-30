@@ -88,6 +88,7 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                 name = str(call["name"])
                 args = call.get("args") or {}
                 status = "done"
+                error_text: str | None = None
                 try:
                     result = execute_tool(
                         name,
@@ -106,6 +107,7 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                     source = None
                     row_count = None
                     status = "error"
+                    error_text = str(exc)[:500]
                 messages.append(ToolMessage(content=content, tool_call_id=call["id"]))
                 step = {
                     "label": STEP_LABELS.get(name, f"调用 {name}"),
@@ -122,6 +124,7 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                         "source": source,
                         "row_count": row_count,
                         "snippet": content[:200],
+                        "error": error_text,
                     }
                 )
                 if status == "done":
