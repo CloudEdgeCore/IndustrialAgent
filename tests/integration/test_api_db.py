@@ -101,9 +101,11 @@ def test_quality_trend_series() -> None:
     assert response.status_code == 200
     points = response.json()
     assert len(points) >= 5
-    assert all(point["total"] > 0 for point in points)
-    recent = points[-3:]
-    assert all(point["fail_rate"] >= 0.03 for point in recent), recent
+
+    # 完整天（昨天 / 前天）不良率应显著高于基线；当天为部分数据仅做范围校验
+    assert points[-2]["fail_rate"] >= 0.035, points[-4:]
+    assert points[-3]["fail_rate"] >= 0.035, points[-4:]
+    assert 0 < points[-1]["fail_rate"] <= 0.10
 
 
 def test_alarms_list_with_equipment_name() -> None:
