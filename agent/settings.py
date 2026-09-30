@@ -24,5 +24,10 @@ class AgentSettings(BaseSettings):
 
     max_tool_iterations: int = 6
 
+    # Langfuse 可观测性（未配置时自动跳过追踪）
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
 
 settings = AgentSettings()

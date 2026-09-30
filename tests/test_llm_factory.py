@@ -25,3 +25,24 @@ def test_factory_allows_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "llm_api_key", "test-key")
     model = get_chat_model(model="qwen-max")
     assert model.model_name == "qwen-max"
+
+
+def test_langfuse_disabled_without_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent.llm import _langfuse_callbacks
+
+    monkeypatch.setattr(settings, "langfuse_public_key", None)
+    monkeypatch.setattr(settings, "langfuse_secret_key", None)
+    assert _langfuse_callbacks() == []
+    monkeypatch.setattr(settings, "llm_api_key", "test-key")
+    assert not get_chat_model().callbacks
+
+
+def test_langfuse_attached_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent.llm import _langfuse_callbacks
+
+    monkeypatch.setenv("LANGFUSE_TRACING_ENABLED", "false")
+    monkeypatch.setattr(settings, "langfuse_public_key", "pk-lf-test")
+    monkeypatch.setattr(settings, "langfuse_secret_key", "sk-lf-test")
+    callbacks = _langfuse_callbacks()
+    assert len(callbacks) == 1
+    assert type(callbacks[0]).__name__ == "LangchainCallbackHandler"
