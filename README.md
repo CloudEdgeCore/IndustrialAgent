@@ -189,7 +189,7 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 | 知识回答有引用来源 | ✅ | RAG 混合检索带 文档/章节/版本 引用；Eval 引用正确率 100%（18/18） |
 | 生成完整诊断报告 | ✅ | Evidence-based 报告落库 + Markdown 导出/打印 |
 | ≥30 问测试集 | ✅ | `tests/evals/testset.jsonl` 32 条 |
-| 意图 ≥90% / 工具 ≥95% / 引用 ≥90% | ✅ | 离线 Eval 三项 100%；LLM 模式 Eval 见 `tests/evals/runner.py --llm` |
+| 意图 ≥90% / 工具 ≥95% / 引用 ≥90% | ✅ | 离线 Eval 三项 100%；**真实 Qwen Eval：意图 100% · 工具 97.6% · 引用 100%**（12 用例） |
 | 关键结果可追溯 | ✅ | 每条结论含数值 + 来源（工具/表/文档），audit 日志记录每次调用 |
 
 ## 开发状态
@@ -200,4 +200,4 @@ cd apps/web && pnpm lint && pnpm build   # 前端检查
 - [x] P3 Agent 层
 - [x] P4 API 层
 - [x] P5 Web 层
-- [ ] P6 打磨与验收
+- [x] P6 打磨与验收（全部完成）
