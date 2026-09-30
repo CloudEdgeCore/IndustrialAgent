@@ -121,11 +121,11 @@ def test_alarms_list_with_equipment_name() -> None:
 def test_equipment_readings_series() -> None:
     response = client.get(
         "/equipment/EQ-003/readings",
-        params={"sensor_type": "temperature", "hours": 2, "bucket": "5m"},
+        params={"sensor_type": "temperature", "hours": 168, "bucket": "15m"},
     )
     assert response.status_code == 200
     points = response.json()
-    assert len(points) >= 12
+    assert len(points) >= 100
     assert max(point["value"] for point in points) > 88
     assert points[0]["timestamp"] < points[-1]["timestamp"]
 

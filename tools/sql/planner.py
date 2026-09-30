@@ -15,6 +15,34 @@ from tools.timeutils import parse_relative
 MAX_LIMIT = 1000
 _ALIAS_RE = re.compile(r"^[a-z_][a-z0-9_]{0,31}$")
 
+_FIELD_ALIASES = {
+    "created": "created_at",
+    "triggered_at": "occurred_at",
+    "alarm_id": "id",
+    "record_id": "id",
+    "inspection_id": "id",
+    "batch_no": "batch_id",
+    "batch": "batch_id",
+    "line": "production_line",
+    "line_id": "production_line",
+    "equipment": "equipment_id",
+    "product": "product_id",
+    "defect": "defect_type",
+    "result_status": "result",
+}
+
+
+def _resolve_field(field: str, spec: DatasetSpec) -> str:
+    """字段别名解析（兼容真实 LLM 的自然命名）；无法解析时原样返回。"""
+    if field in spec.columns:
+        return field
+    if field in ("timestamp", "time", "date", "datetime", "ts"):
+        return spec.time_field
+    alias = _FIELD_ALIASES.get(field)
+    if alias and alias in spec.columns:
+        return alias
+    return field
+
 
 @dataclass
 class PlannedQuery:
@@ -51,29 +79,42 @@ def plan(query: StructuredQuery) -> PlannedQuery:
     if not query.select or query.select == ["*"]:
         select = list(spec.columns)
     else:
+        select = []
         for column in query.select:
-            if column not in columns:
+            resolved = _resolve_field(column, spec)
+            if resolved not in columns:
                 raise ToolValidationError(f"字段不在白名单: {column}")
-        select = list(query.select)
+            select.append(resolved)
 
     metrics: list[Metric] = []
     for metric in query.metrics:
+        if metric.field != "*":
+            metric.field = _resolve_field(metric.field, spec)
         _validate_metric(metric, spec)
         metrics.append(metric)
 
+    group_by: list[str] = []
     for group in query.group_by:
-        if group not in columns:
+        resolved = _resolve_field(group, spec)
+        if resolved not in columns:
             raise ToolValidationError(f"分组字段不在白名单: {group}")
+        group_by.append(resolved)
 
-    if query.group_by and not metrics:
+    if group_by and not metrics:
         metrics.append(Metric(func="count", field="*", alias="count"))
 
     filters: list[Filter] = []
     for flt in query.filters:
+        flt.field = _resolve_field(flt.field, spec)
         if flt.field not in columns:
             raise ToolValidationError(f"过滤字段不在白名单: {flt.field}")
-        if flt.op == "in" and (not isinstance(flt.value, list) or not flt.value):
-            raise ToolValidationError("in 操作需要非空列表")
+        if flt.op == "in":
+            value = flt.value
+            if isinstance(value, str):
+                value = [part.strip() for part in value.split(",") if part.strip()]
+                flt.value = value
+            if not isinstance(value, list) or not value:
+                raise ToolValidationError("in 操作需要非空列表")
         if flt.op == "like" and not isinstance(flt.value, str):
             raise ToolValidationError("like 操作需要字符串")
         if flt.op == "is_null" and not isinstance(flt.value, bool):
@@ -86,9 +127,10 @@ def plan(query: StructuredQuery) -> PlannedQuery:
     aliases = {m.alias for m in metrics if m.alias}
     order_by: list[OrderBy] = []
     for order in query.order_by:
-        if order.field not in columns and order.field not in aliases:
+        resolved = _resolve_field(order.field, spec)
+        if resolved not in columns and resolved not in aliases:
             raise ToolValidationError(f"排序字段不在白名单: {order.field}")
-        order_by.append(order)
+        order_by.append(OrderBy(field=resolved, desc=order.desc))
     if not order_by:
         if metrics:
             first_alias = metrics[0].alias or metrics[0].func
@@ -103,7 +145,7 @@ def plan(query: StructuredQuery) -> PlannedQuery:
         spec=spec,
         select=select,
         filters=filters,
-        group_by=list(query.group_by),
+        group_by=group_by,
         metrics=metrics,
         order_by=order_by,
         limit=limit,

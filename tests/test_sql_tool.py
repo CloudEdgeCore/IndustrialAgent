@@ -56,6 +56,79 @@ def test_unknown_column_rejected() -> None:
         )
 
 
+def test_stringified_structures_are_parsed() -> None:
+    """真实 LLM 常见：time_range / filters 被序列化为 JSON 字符串。"""
+    planned = plan(
+        StructuredQuery(
+            dataset="alarms",
+            filters='[{"field": "equipment_id", "op": "=", "value": "EQ-003"}]',
+            time_range='{"relative": "yesterday"}',
+        )
+    )
+    sql, _ = build(planned)
+    assert "equipment_id = %(p0)s" in sql
+    assert "occurred_at >= %(p1)s" in sql
+
+
+def test_field_and_op_aliases() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="alarms",
+            filters=[
+                Filter(
+                    field="triggered_at",
+                    op="gte",
+                    value="2026-09-29T00:00:00+00:00",
+                )
+            ],
+            order_by=[OrderBy(field="alarm_id", desc=True)],
+            limit=5,
+        )
+    )
+    sql, _ = build(planned)
+    assert "occurred_at >=" in sql
+    assert "ORDER BY id DESC" in sql
+
+    planned2 = plan(
+        StructuredQuery(dataset="equipment", order_by=[OrderBy(field="timestamp")])
+    )
+    sql2, _ = build(planned2)
+    assert "ORDER BY created_at" in sql2
+
+
+def test_in_op_string_value_and_like_alias() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="alarms",
+            filters=[Filter(field="equipment_id", op="in", value="EQ-001, EQ-002")],
+        )
+    )
+    _, params = build(planned)
+    assert params["p0"] == ["EQ-001", "EQ-002"]
+
+    planned2 = plan(
+        StructuredQuery(
+            dataset="quality_inspections",
+            filters=[Filter(field="defect_type", op="contains", value="裂纹")],
+        )
+    )
+    sql2, params2 = build(planned2)
+    assert "ILIKE" in sql2
+    assert params2["p0"] == "%裂纹%"
+
+
+def test_metric_func_aliases() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="quality_inspections",
+            group_by=["result"],
+            metrics=[Metric(func="mean", field="process_temperature")],
+        )
+    )
+    sql, _ = build(planned)
+    assert "avg(process_temperature)" in sql
+
+
 def test_metric_must_be_numeric() -> None:
     with pytest.raises(ToolValidationError, match="数值列"):
         plan(
