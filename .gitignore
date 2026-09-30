@@ -35,3 +35,7 @@ data/fixtures/manifest.json
 
 # Eval 运行产物
 tests/evals/report.json
+
+# Eval 运行日志
+eval_llm.log
+eval_llm.err
