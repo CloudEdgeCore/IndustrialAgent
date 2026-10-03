@@ -33,9 +33,9 @@ miniodata/
 # 种子数据运行产物（可重新生成）
 data/fixtures/manifest.json
 
-# Eval 运行产物
-tests/evals/report.json
+# Eval 证据**不入 ignore**：report.json 是评测结论的可复核凭据（含逐用例明细与
+# 指标定义），需要随仓库一起被审阅 —— 指标只有能被检查才有意义。
 
-# Eval 运行日志
+# Eval 运行日志（体积大、可由 report.json 复现）
 eval_llm.log
 eval_llm.err

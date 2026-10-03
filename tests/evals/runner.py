@@ -40,7 +40,9 @@ from tools.loader import load_all_tools
 from tools.rag.search import search as rag_search
 
 TESTSET_PATH = Path(__file__).parent / "testset.jsonl"
+# 两种模式**分开落盘**：离线跑一次就把 LLM 评测证据覆盖掉，等于丢掉可复核凭据
 REPORT_PATH = Path(__file__).parent / "report.json"
+REPORT_OFFLINE_PATH = Path(__file__).parent / "report-offline.json"
 
 INTENT_BASELINE = 0.90
 TOOL_BASELINE = 0.95
@@ -631,8 +633,10 @@ def main() -> None:
         cases = cases[: args.limit]
     if args.llm:
         report = run_llm_eval(cases, workers=max(1, args.workers))
+        target = REPORT_PATH
     else:
         report = run_offline_eval(cases)
+        target = REPORT_OFFLINE_PATH
     print(report.summary())
     print("基线指标:", {k: round(v, 4) for k, v in report.baseline_metrics().items()})
     if report.measures_agent_behavior:
@@ -644,7 +648,7 @@ def main() -> None:
     if not report.measures_agent_behavior:
         print("注意: 离线模式不执行 Agent，不能作为 Agent 质量证据（用 --llm）")
     _print_failures(report)
-    print("报告 ->", save_report(report))
+    print("报告 ->", save_report(report, target))
 
 
 if __name__ == "__main__":
