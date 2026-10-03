@@ -104,7 +104,18 @@ DATASETS: dict[str, DatasetSpec] = {
     "defects": DatasetSpec(
         table="defects",
         time_field="created_at",
-        columns=("defect_code", "name", "category", "description"),
+        # 注意：time_field / default_order_field / numeric_columns 必须都在 columns 内，
+        # 否则该数据集的时间范围查询会自相矛盾地失败
+        # （曾漏掉 created_at，导致 defects 的任何 time_range 查询都报"时间字段不在白名单"）。
+        # 该不变式由 tests/test_sql_tool.py::test_dataset_spec_invariants 锁定。
+        columns=(
+            "defect_code",
+            "name",
+            "category",
+            "description",
+            "created_at",
+            "updated_at",
+        ),
         numeric_columns=(),
         default_order_field="defect_code",
         default_order_desc=False,

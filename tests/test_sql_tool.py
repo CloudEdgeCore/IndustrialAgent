@@ -12,6 +12,7 @@ from tools.sql import tool as _tool  # noqa: F401  触发注册
 from tools.sql.builder import build
 from tools.sql.models import Filter, Metric, OrderBy, StructuredQuery, TimeRange
 from tools.sql.planner import MAX_LIMIT, plan
+from tools.sql.schema import DATASETS
 from tools.sql.validator import validate_sql
 
 
@@ -20,6 +21,82 @@ def test_tools_registered() -> None:
     assert "sql.query" in names
     assert "sql.alarm_search" in names
     assert "sql.history_case" in names
+
+
+def test_dataset_spec_invariants() -> None:
+    """每个 DatasetSpec 的 time_field / default_order_field / numeric_columns
+    必须都在 columns 内，否则该数据集的相关查询会自相矛盾地失败。
+
+    回归点：defects 的 time_field=created_at 却未列入 columns，
+    导致 defects 的任何 time_range 查询都报"时间字段不在白名单: created_at"。
+    """
+    for name, spec in DATASETS.items():
+        columns = set(spec.columns)
+        assert spec.time_field in columns, f"{name}: time_field 不在 columns"
+        assert spec.default_order_field in columns, f"{name}: default_order_field 不在 columns"
+        for column in spec.numeric_columns:
+            assert column in columns, f"{name}: numeric_column {column} 不在 columns"
+
+
+def test_time_range_works_for_every_dataset() -> None:
+    """所有数据集都必须支持相对时间范围（回归：defects 曾必然失败）。"""
+    for name, spec in DATASETS.items():
+        planned = plan(
+            StructuredQuery(dataset=name, time_range=TimeRange(relative="last_30d"))
+        )
+        assert any(flt.field == spec.time_field for flt in planned.filters), name
+
+
+def test_unknown_time_like_field_falls_back_to_dataset_time_field() -> None:
+    """LLM 写出该数据集不存在的时间列名时，回退到该数据集的时间字段。"""
+    planned = plan(
+        StructuredQuery(
+            dataset="maintenance_records",
+            order_by=[OrderBy(field="started_at", desc=True)],
+        )
+    )
+    assert planned.order_by[0].field == "occurred_at"
+
+    missing_time = plan(
+        StructuredQuery(
+            dataset="maintenance_records",
+            time_range=TimeRange(relative="last_7d"),
+        )
+    )
+    assert any(flt.field == "occurred_at" for flt in missing_time.filters)
+
+
+def test_inspected_at_alias_resolves() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="quality_inspections",
+            filters=[Filter(field="inspected_at", op=">=", value="2026-01-01")],
+        )
+    )
+    assert planned.filters[0].field == "inspection_time"
+
+
+def test_non_time_unknown_field_still_rejected() -> None:
+    """放宽必须只针对时间类字段：非时间字段仍走白名单拒绝（安全不变式）。"""
+    with pytest.raises(ToolValidationError, match="过滤字段不在白名单"):
+        plan(
+            StructuredQuery(
+                dataset="maintenance_records",
+                filters=[Filter(field="secret_note", op="=", value="x")],
+            )
+        )
+
+
+def test_defects_dataset_accepts_time_range_and_groups() -> None:
+    planned = plan(
+        StructuredQuery(
+            dataset="defects",
+            group_by=["category"],
+            time_range=TimeRange(relative="last_30d"),
+        )
+    )
+    assert "category" in planned.group_by
+    assert planned.metrics, "group_by 应自动补 count 指标"
 
 
 def test_build_basic_query() -> None:

@@ -22,6 +22,7 @@ _FIELD_ALIASES = {
     "alarm_id": "id",
     "record_id": "id",
     "inspection_id": "id",
+    "inspected_at": "inspection_time",
     "batch_no": "batch_id",
     "batch": "batch_id",
     "line": "production_line",
@@ -32,16 +33,25 @@ _FIELD_ALIASES = {
     "result_status": "result",
 }
 
+# 时间字段兜底：LLM 常写出该数据集并不存在的时间列名
+# （如对维修记录写 created_at、对 batches 写 maintenance_date）。
+_TIME_HINTS = ("timestamp", "time", "date", "datetime", "ts")
+_TIME_SUFFIXES = ("_at", "_time", "_date")
+
 
 def _resolve_field(field: str, spec: DatasetSpec) -> str:
-    """字段别名解析（兼容真实 LLM 的自然命名）；无法解析时原样返回。"""
+    """字段别名解析（兼容真实 LLM 的自然命名）；无法解析时原样返回。
+
+    返回的字段仍会被调用方用 ``in spec.columns`` 复核，因此这里的放宽不会
+    削弱白名单（非时间类字段一律原样返回并触发校验错误）。
+    """
     if field in spec.columns:
         return field
-    if field in ("timestamp", "time", "date", "datetime", "ts"):
-        return spec.time_field
     alias = _FIELD_ALIASES.get(field)
     if alias and alias in spec.columns:
         return alias
+    if field in _TIME_HINTS or field.endswith(_TIME_SUFFIXES):
+        return spec.time_field
     return field
 
 
