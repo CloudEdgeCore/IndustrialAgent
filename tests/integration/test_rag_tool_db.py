@@ -72,3 +72,30 @@ def test_rag_search_via_executor() -> None:
     assert result.meta["row_count"] >= 1
     assert result.meta["source"] == "postgres:document_chunks"
     assert "裂纹" in result.data[0]["content"]
+
+
+def test_keyword_arm_ranking_is_deterministic() -> None:
+    """回归：关键词臂缺 ORDER BY 时 LIMIT 截取堆序行，排序不可复现。"""
+    query = "主轴 温度 冷却 流量 报警 处理"
+    first = [item["chunk_id"] for item in search(query, top_k=5)]
+    for _ in range(3):
+        assert [item["chunk_id"] for item in search(query, top_k=5)] == first
+
+
+def test_keyword_relevance_beats_arbitrary_order() -> None:
+    """命中 token 更多的分块应排到更前（同分时按 c.id 兜底）。"""
+    results = search("主轴 温度 冷却 流量", top_k=5)
+    hits = [item["scores"]["keyword_hits"] for item in results]
+    assert hits == sorted(hits, reverse=True), f"相关度未按降序排列: {hits}"
+
+
+def test_retrieval_indexes_exist() -> None:
+    """HNSW（向量）与 pg_trgm（关键词 ILIKE）索引必须存在。"""
+    url = normalize_database_url(os.environ.get("DATABASE_URL", settings.database_url))
+    with psycopg.connect(url) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'document_chunks'"
+        )
+        names = {row[0] for row in cur.fetchall()}
+    assert "ix_document_chunks_embedding_hnsw" in names
+    assert "ix_document_chunks_content_trgm" in names
