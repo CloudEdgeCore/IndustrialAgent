@@ -37,6 +37,8 @@ jobs:
         run: alembic -c apps/api/alembic.ini upgrade head
       - name: Seed demo data (fast profile)
         run: python -m data.simulator --days 2 --quality-days 5 --history-days 10 --seed 42
+      - name: Ingest knowledge base
+        run: python -m tools.rag ingest
       - name: Test
         run: pytest
 
