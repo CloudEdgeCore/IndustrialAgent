@@ -1,6 +1,12 @@
-"""质量分析 API。"""
+"""质量分析 API。
 
-from datetime import UTC, datetime, timedelta
+窗口锚点：所有相对时间窗口锚定 ``tools.freshness.data_freshness().anchor``
+（默认=数据最新时间），而非 ``datetime.now()``。这样回放/模拟数据集下
+"最近 N 天"始终落在数据时间轴上，不会因数据落库时间推移而静默失真；
+响应同时返回 ``data_as_of`` / ``data_lag_hours``，界面可明确标注数据截止时间。
+"""
+
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, select
@@ -9,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.schemas import InspectionOut, QualitySummaryOut, QualityTrendPoint
 from models import QualityInspection
+from tools.freshness import data_freshness
 
 router = APIRouter(prefix="/quality", tags=["quality"])
 
@@ -19,7 +26,7 @@ def quality_trend(
     days: int = Query(14, ge=1, le=90),
     db: Session = Depends(get_db),
 ) -> list[QualityTrendPoint]:
-    since = datetime.now(UTC) - timedelta(days=days)
+    since = data_freshness().anchor - timedelta(days=days)
     day = func.date_trunc("day", QualityInspection.inspection_time).label("day")
     rows = db.execute(
         select(
@@ -45,7 +52,19 @@ def quality_trend(
     ]
 
 
-def _window_stats(db: Session, product_id: str, start: datetime, end: datetime) -> tuple[int, int]:
+def _window_stats(
+    db: Session,
+    product_id: str,
+    start: datetime,
+    end: datetime,
+    *,
+    inclusive_end: bool = False,
+) -> tuple[int, int]:
+    upper = (
+        QualityInspection.inspection_time <= end
+        if inclusive_end
+        else QualityInspection.inspection_time < end
+    )
     row = db.execute(
         select(
             func.count(),
@@ -53,7 +72,7 @@ def _window_stats(db: Session, product_id: str, start: datetime, end: datetime) 
         ).where(
             QualityInspection.product_id == product_id,
             QualityInspection.inspection_time >= start,
-            QualityInspection.inspection_time < end,
+            upper,
         )
     ).one()
     total = int(row[0] or 0)
@@ -67,12 +86,16 @@ def quality_summary(
     days: int = Query(3, ge=1, le=30),
     db: Session = Depends(get_db),
 ) -> QualitySummaryOut:
-    now = datetime.now(UTC)
-    recent_start = now - timedelta(days=days)
+    freshness = data_freshness()
+    anchor = freshness.anchor
+    recent_start = anchor - timedelta(days=days)
     baseline_start = recent_start - timedelta(days=days)
 
-    total, fails = _window_stats(db, product_id, recent_start, now)
-    baseline_total, baseline_fails = _window_stats(db, product_id, baseline_start, recent_start)
+    # 近期窗口闭区间（含数据末端），基线窗口左闭右开 —— 不重叠、不留缝
+    total, fails = _window_stats(db, product_id, recent_start, anchor, inclusive_end=True)
+    baseline_total, baseline_fails = _window_stats(
+        db, product_id, baseline_start, recent_start
+    )
 
     top_defects = db.execute(
         select(QualityInspection.defect_type, func.count().label("count"))
@@ -80,6 +103,7 @@ def quality_summary(
             QualityInspection.product_id == product_id,
             QualityInspection.result == "fail",
             QualityInspection.inspection_time >= recent_start,
+            QualityInspection.inspection_time <= anchor,
         )
         .group_by(QualityInspection.defect_type)
         .order_by(func.count().desc())
@@ -92,6 +116,7 @@ def quality_summary(
             QualityInspection.product_id == product_id,
             QualityInspection.result == "fail",
             QualityInspection.inspection_time >= recent_start,
+            QualityInspection.inspection_time <= anchor,
         )
         .group_by(QualityInspection.equipment_id)
         .order_by(func.count().desc())
@@ -115,6 +140,9 @@ def quality_summary(
             {"equipment_id": row.equipment_id, "count": row.count}
             for row in by_equipment
         ],
+        data_as_of=anchor,
+        data_lag_hours=freshness.lag_hours,
+        anchor_source=freshness.resolved_from,
     )
 
 

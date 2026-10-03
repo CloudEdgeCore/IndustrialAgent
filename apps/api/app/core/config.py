@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     environment: str = "dev"
 
+    # 相对时间窗口锚点（与 tools/settings.py 保持一致）：
+    #   data（默认）= 锚定数据最新时间；now = 锚定真实时钟
+    window_anchor: str = "data"
+
     database_url: str = (
         "postgresql+psycopg://industrial:industrial@localhost:5432/industrial_agent"
     )

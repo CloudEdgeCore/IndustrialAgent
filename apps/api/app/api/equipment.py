@@ -1,5 +1,7 @@
 """设备中心 API。"""
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from app.schemas import (
     SensorPointOut,
 )
 from models import Alarm, Equipment, MaintenanceRecord
+from tools.freshness import data_freshness
 
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
@@ -66,17 +69,22 @@ def equipment_detail(
 
     rows = db.execute(
         text(
-            "SELECT DISTINCT ON (sensor_type) sensor_type, value "
+            "SELECT DISTINCT ON (sensor_type) sensor_type, value, timestamp "
             "FROM sensor_readings WHERE equipment_id = :eq "
             "ORDER BY sensor_type, timestamp DESC"
         ),
         {"eq": equipment_id},
     ).all()
     latest = {row.sensor_type: float(row.value) for row in rows}
+    latest_at = max((row.timestamp for row in rows), default=None)
 
+    freshness = data_freshness()
     detail = EquipmentDetailOut.model_validate(equipment)
     detail.active_alarms = [AlarmOut.model_validate(item) for item in alarms]
     detail.latest_readings = latest
+    detail.latest_reading_at = latest_at
+    detail.data_as_of = freshness.anchor
+    detail.data_lag_hours = freshness.lag_hours
     return detail
 
 
@@ -96,15 +104,24 @@ def equipment_readings(
     if bucket_sql is None:
         raise HTTPException(status_code=422, detail=f"非法聚合粒度: {bucket}")
 
+    # 窗口锚定数据末尾（而非 now()），否则数据落库数天后曲线会整段变空
+    anchor = data_freshness().anchor
+    since = anchor - timedelta(hours=hours)
     rows = db.execute(
         text(
             "SELECT time_bucket(CAST(:bucket AS interval), timestamp) AS ts, "
             "avg(value) AS value, 'good' AS quality "
             "FROM sensor_readings WHERE equipment_id = :eq AND sensor_type = :st "
-            "AND timestamp >= now() - (:hours * interval '1 hour') "
+            "AND timestamp >= :since AND timestamp <= :anchor "
             "GROUP BY ts ORDER BY ts"
         ),
-        {"bucket": bucket_sql, "eq": equipment_id, "st": sensor_type, "hours": hours},
+        {
+            "bucket": bucket_sql,
+            "eq": equipment_id,
+            "st": sensor_type,
+            "since": since,
+            "anchor": anchor,
+        },
     ).all()
     return [
         SensorPointOut(timestamp=row.ts, value=round(float(row.value), 3), quality=row.quality)

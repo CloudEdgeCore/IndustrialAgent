@@ -15,6 +15,11 @@ class ToolSettings(BaseSettings):
         extra="ignore", env_file=str(_ENV_FILE), env_file_encoding="utf-8"
     )
 
+    # 相对时间窗口锚点：
+    #   data（默认）= 锚定数据最新时间，模拟/回放数据集下窗口始终命中数据
+    #   now         = 锚定真实时钟，生产接入实时数据流时使用（配合滞后告警）
+    window_anchor: str = "data"
+
     database_url: str = (
         "postgresql+psycopg://industrial:industrial@localhost:5432/industrial_agent"
     )

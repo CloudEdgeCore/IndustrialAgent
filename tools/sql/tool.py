@@ -1,6 +1,7 @@
 """SQL Query Tool 注册（白名单结构化查询）。"""
 
 from tools.base import ToolContext, ToolResult
+from tools.freshness import data_freshness
 from tools.registry import default_registry
 from tools.sql.builder import build
 from tools.sql.engine import run_readonly_query
@@ -18,7 +19,8 @@ from tools.sql.validator import validate_sql
     params_model=StructuredQuery,
 )
 def sql_query(params: StructuredQuery, ctx: ToolContext) -> ToolResult:
-    planned = plan(params)
+    freshness = data_freshness()
+    planned = plan(params, anchor=freshness.anchor)
     sql, sql_params = build(planned)
     validate_sql(sql, allowed_tables={planned.spec.table})
     rows = run_readonly_query(sql, sql_params)
@@ -30,5 +32,11 @@ def sql_query(params: StructuredQuery, ctx: ToolContext) -> ToolResult:
             "row_count": len(rows),
             "sql": sql,
             "source": f"postgres:{planned.spec.table}",
+            # 证据可追溯：结论引用的相对时间窗口必须能还原到绝对时间
+            "window": {
+                "anchor": freshness.anchor.isoformat(),
+                "anchor_source": freshness.resolved_from,
+                "data_lag_hours": freshness.lag_hours,
+            },
         },
     )

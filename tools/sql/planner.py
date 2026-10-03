@@ -6,6 +6,7 @@
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from tools.base import ToolValidationError
 from tools.sql.models import Filter, Metric, OrderBy, StructuredQuery, TimeRange
@@ -68,7 +69,12 @@ def _validate_metric(metric: Metric, spec: DatasetSpec) -> None:
         raise ToolValidationError(f"非法别名: {metric.alias}")
 
 
-def plan(query: StructuredQuery) -> PlannedQuery:
+def plan(query: StructuredQuery, anchor: datetime | None = None) -> PlannedQuery:
+    """结构化查询 → 白名单校验与归一化。
+
+    anchor 为相对时间窗口的"现在"；None 时退化为真实时钟（纯函数语义，
+    便于单元测试）。生产路径由 tools.freshness.window_now() 传入数据锚点。
+    """
     spec = DATASETS.get(query.dataset)
     if spec is None:
         raise ToolValidationError(
@@ -122,7 +128,7 @@ def plan(query: StructuredQuery) -> PlannedQuery:
         filters.append(flt)
 
     if query.time_range is not None:
-        filters.extend(_time_filters(query.time_range, spec))
+        filters.extend(_time_filters(query.time_range, spec, anchor))
 
     aliases = {m.alias for m in metrics if m.alias}
     order_by: list[OrderBy] = []
@@ -152,12 +158,14 @@ def plan(query: StructuredQuery) -> PlannedQuery:
     )
 
 
-def _time_filters(time_range: TimeRange, spec: DatasetSpec) -> list[Filter]:
+def _time_filters(
+    time_range: TimeRange, spec: DatasetSpec, anchor: datetime | None = None
+) -> list[Filter]:
     field = time_range.field or spec.time_field
     if field not in spec.columns:
         raise ToolValidationError(f"时间字段不在白名单: {field}")
     if time_range.relative:
-        window = parse_relative(time_range.relative)
+        window = parse_relative(time_range.relative, anchor)
         if window is None:
             raise ToolValidationError(
                 f"未知时间范围: {time_range.relative}"

@@ -24,6 +24,9 @@ export type Alarm = {
 export type EquipmentDetail = Equipment & {
   active_alarms: Alarm[];
   latest_readings: Record<string, number>;
+  latest_reading_at?: string | null;
+  data_as_of?: string | null;
+  data_lag_hours?: number | null;
 };
 
 export type SensorPoint = { timestamp: string; value: number; quality: string };
@@ -51,6 +54,17 @@ export type QualitySummary = {
   baseline_fail_rate: number | null;
   top_defects: { defect_type: string; count: number }[];
   by_equipment: { equipment_id: string; count: number }[];
+  /** 窗口锚点（相对时间的"现在"）与数据滞后，用于界面标注"数据截至" */
+  data_as_of?: string | null;
+  data_lag_hours?: number | null;
+  anchor_source?: string | null;
+};
+
+export type Freshness = {
+  anchor: string;
+  resolved_from: "data" | "now";
+  lag_hours: number;
+  domains: Record<string, string | null>;
 };
 
 export type QualityTrendPoint = {
@@ -134,6 +148,7 @@ async function getJSON<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  freshness: () => getJSON<Freshness>("/api/meta/freshness"),
   equipmentList: (params: { status?: string; equipment_type?: string; limit?: number } = {}) =>
     getJSON<{ total: number; items: Equipment[] }>(`/api/equipment${qs({ ...params, limit: params.limit ?? 200 })}`),
   equipmentDetail: (id: string) => getJSON<EquipmentDetail>(`/api/equipment/${id}`),

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from tools.base import ToolContext, ToolResult
+from tools.freshness import data_freshness
 from tools.registry import default_registry
 from tools.sql.engine import run_readonly_query
 from tools.sql.validator import validate_sql
@@ -20,8 +21,11 @@ _TABLE_BY_KIND = {
 }
 
 
-def _resolve_range(params: TimeSeriesParams) -> tuple[datetime, datetime]:
-    now = datetime.now(UTC)
+def _resolve_range(
+    params: TimeSeriesParams, anchor: datetime | None = None
+) -> tuple[datetime, datetime]:
+    """解析查询时间窗口；anchor 为相对时间的"现在"（None → 真实时钟）。"""
+    now = anchor or datetime.now(UTC)
     if params.start is None and params.end is None:
         return relative_window(params.relative or "last_24h", now)
     end = params.end or now
@@ -44,8 +48,10 @@ def _base_where(params: TimeSeriesParams) -> tuple[str, dict]:
     return where, sql_params
 
 
-def build_series_sql(params: TimeSeriesParams) -> tuple[str, dict, str, datetime, datetime]:
-    start, end = _resolve_range(params)
+def build_series_sql(
+    params: TimeSeriesParams, anchor: datetime | None = None
+) -> tuple[str, dict, str, datetime, datetime]:
+    start, end = _resolve_range(params, anchor)
     where, sql_params = _base_where(params)
     sql_params["start"] = start
     sql_params["end"] = end
@@ -68,8 +74,10 @@ def build_series_sql(params: TimeSeriesParams) -> tuple[str, dict, str, datetime
     return sql, sql_params, table, start, end
 
 
-def build_stats_sql(params: TimeSeriesParams) -> tuple[str, dict, str, datetime, datetime]:
-    start, end = _resolve_range(params)
+def build_stats_sql(
+    params: TimeSeriesParams, anchor: datetime | None = None
+) -> tuple[str, dict, str, datetime, datetime]:
+    start, end = _resolve_range(params, anchor)
     where, sql_params = _base_where(params)
     sql_params["start"] = start
     sql_params["end"] = end
@@ -83,8 +91,10 @@ def build_stats_sql(params: TimeSeriesParams) -> tuple[str, dict, str, datetime,
     return sql, sql_params, table, start, end
 
 
-def build_anomaly_sql(params: TimeSeriesParams) -> tuple[str, dict, str, datetime, datetime]:
-    start, end = _resolve_range(params)
+def build_anomaly_sql(
+    params: TimeSeriesParams, anchor: datetime | None = None
+) -> tuple[str, dict, str, datetime, datetime]:
+    start, end = _resolve_range(params, anchor)
     where, sql_params = _base_where(params)
     sql_params["start"] = start
     sql_params["end"] = end
@@ -138,12 +148,14 @@ def _close_window(rows: list[dict], params: TimeSeriesParams) -> dict:
     params_model=TimeSeriesParams,
 )
 def timeseries_query(params: TimeSeriesParams, ctx: ToolContext) -> ToolResult:
+    freshness = data_freshness()
+    anchor = freshness.anchor
     if params.op == "stats":
-        sql, sql_params, table, start, end = build_stats_sql(params)
+        sql, sql_params, table, start, end = build_stats_sql(params, anchor)
     elif params.op == "anomaly_windows":
-        sql, sql_params, table, start, end = build_anomaly_sql(params)
+        sql, sql_params, table, start, end = build_anomaly_sql(params, anchor)
     else:
-        sql, sql_params, table, start, end = build_series_sql(params)
+        sql, sql_params, table, start, end = build_series_sql(params, anchor)
 
     validate_sql(sql, allowed_tables={table})
     rows = run_readonly_query(sql, sql_params)
@@ -167,5 +179,11 @@ def timeseries_query(params: TimeSeriesParams, ctx: ToolContext) -> ToolResult:
             "metric": params.metric,
             "range": {"start": start.isoformat(), "end": end.isoformat()},
             "op": params.op,
+            # 证据可追溯：相对时间窗口需能还原到绝对时间与数据新鲜度
+            "window": {
+                "anchor": anchor.isoformat(),
+                "anchor_source": freshness.resolved_from,
+                "data_lag_hours": freshness.lag_hours,
+            },
         },
     )

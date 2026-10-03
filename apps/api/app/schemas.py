@@ -44,6 +44,10 @@ class SensorPointOut(BaseModel):
 class EquipmentDetailOut(EquipmentOut):
     active_alarms: list[AlarmOut] = Field(default_factory=list)
     latest_readings: dict[str, float] = Field(default_factory=dict)
+    # 数据新鲜度：避免把数天前的读数当作实时数据展示
+    latest_reading_at: datetime | None = None
+    data_as_of: datetime | None = None
+    data_lag_hours: float | None = None
 
 
 class QualitySummaryOut(BaseModel):
@@ -56,6 +60,10 @@ class QualitySummaryOut(BaseModel):
     baseline_fail_rate: float | None = None
     top_defects: list[dict[str, Any]] = Field(default_factory=list)
     by_equipment: list[dict[str, Any]] = Field(default_factory=list)
+    # 窗口锚点（相对时间窗口的"现在"）与数据滞后，供界面标注"数据截至"
+    data_as_of: datetime | None = None
+    data_lag_hours: float | None = None
+    anchor_source: str | None = None
 
 
 class InspectionOut(BaseModel):
