@@ -6,7 +6,6 @@ from tools.base import ToolContext, ToolResult
 from tools.freshness import data_freshness
 from tools.registry import default_registry
 from tools.sql.engine import run_readonly_query
-from tools.sql.validator import validate_sql
 from tools.timeseries.models import (
     BUCKET_AGGS,
     BUCKETS,
@@ -157,8 +156,7 @@ def timeseries_query(params: TimeSeriesParams, ctx: ToolContext) -> ToolResult:
     else:
         sql, sql_params, table, start, end = build_series_sql(params, anchor)
 
-    validate_sql(sql, allowed_tables={table})
-    rows = run_readonly_query(sql, sql_params)
+    rows = run_readonly_query(sql, sql_params, allowed_tables={table})
 
     if params.op == "anomaly_windows":
         windows = _group_windows(rows, params)

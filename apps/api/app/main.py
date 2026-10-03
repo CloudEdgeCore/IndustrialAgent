@@ -10,6 +10,10 @@ from app.api.meta import router as meta_router
 from app.api.quality import router as quality_router
 from app.api.reports import router as reports_router
 from app.core.config import settings
+from tools.audit import configure_audit_logging
+
+# 审计日志必须可见：挂载 stdout handler（Docker 直接采集）
+configure_audit_logging()
 
 app = FastAPI(title=settings.app_name, version=settings.version)
 app.include_router(health_router)

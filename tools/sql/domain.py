@@ -11,7 +11,6 @@ from tools.sql.builder import build
 from tools.sql.engine import run_readonly_query
 from tools.sql.models import Filter, StructuredQuery
 from tools.sql.planner import plan
-from tools.sql.validator import validate_sql
 
 _MAX_LIMIT = 200
 
@@ -80,8 +79,7 @@ def alarm_search(params: AlarmSearchParams, ctx: ToolContext) -> ToolResult:
     )
     planned = plan(query)
     sql, sql_params = build(planned)
-    validate_sql(sql, allowed_tables={"alarms"})
-    rows = run_readonly_query(sql, sql_params)
+    rows = run_readonly_query(sql, sql_params, allowed_tables={"alarms"})
     for row in rows:
         item = catalog.get(row["alarm_code"])
         row["alarm_name"] = item["name"] if item else None
@@ -127,8 +125,9 @@ def history_case(params: HistoryCaseParams, ctx: ToolContext) -> ToolResult:
         sql += " WHERE " + " AND ".join(where_parts)
     sql += f" ORDER BY occurred_at DESC LIMIT {limit}"
 
-    validate_sql(sql, allowed_tables={"maintenance_records"})
-    rows = run_readonly_query(sql, sql_params)
+    rows = run_readonly_query(
+        sql, sql_params, allowed_tables={"maintenance_records"}
+    )
     return ToolResult(
         tool="sql.history_case",
         data=rows,

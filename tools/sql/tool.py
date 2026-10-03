@@ -7,7 +7,6 @@ from tools.sql.builder import build
 from tools.sql.engine import run_readonly_query
 from tools.sql.models import StructuredQuery
 from tools.sql.planner import plan
-from tools.sql.validator import validate_sql
 
 
 @default_registry.register(
@@ -22,8 +21,9 @@ def sql_query(params: StructuredQuery, ctx: ToolContext) -> ToolResult:
     freshness = data_freshness()
     planned = plan(params, anchor=freshness.anchor)
     sql, sql_params = build(planned)
-    validate_sql(sql, allowed_tables={planned.spec.table})
-    rows = run_readonly_query(sql, sql_params)
+    rows = run_readonly_query(
+        sql, sql_params, allowed_tables={planned.spec.table}
+    )
     return ToolResult(
         tool="sql.query",
         data=rows,
