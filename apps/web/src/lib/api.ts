@@ -106,6 +106,14 @@ export type ReportInfo = {
 
 export type ReportDetail = ReportInfo & { content_markdown: string | null };
 
+export type Grounding = {
+  checked: number;
+  matched: number;
+  unmatched: string[];
+  ratio: number;
+  degraded_agents?: string[];
+};
+
 export type AgentEvent = {
   type: "step" | "result" | "error" | "warning";
   label?: string;
@@ -124,6 +132,7 @@ export type AgentEvent = {
     row_count: number | null;
   }[];
   evidence_count?: number;
+  grounding?: Grounding;
   message?: string;
 };
 

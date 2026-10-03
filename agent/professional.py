@@ -1,10 +1,11 @@
 """专业 Agent 通用执行机制：工具循环 + 结构化结论（Evidence-based）。
 
 流程（对 LLM 展示为业务步骤，不暴露思维链）：
-1. 系统提示词 + 用户问题/上下文 → LLM 决定调用工具；
+1. 系统提示词 + 会话历史 + 用户问题/上下文 → LLM 决定调用工具；
 2. 工具经 Tool Layer 权限校验执行（agent 名称作为权限主体）；
 3. 工具结果回填，循环至无工具调用或达上限；
-4. 追加结论指令，解析为 AgentConclusion（失败重试一次，再失败降级）。
+4. 追加结论指令，解析为 AgentConclusion（失败重试一次，再失败**显式标记降级**）；
+5. 对结论做数值 grounding 校验（对照工具真实 payload）。
 """
 
 import json
@@ -14,6 +15,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent.events import emit_step
+from agent.grounding import verify_grounding
+from agent.history import format_history
 from agent.models import AgentConclusion
 from agent.settings import settings
 from agent.state import AgentState
@@ -62,7 +65,11 @@ def parse_conclusion(text: str) -> AgentConclusion:
 
 
 def _task_prompt(state: AgentState) -> str:
-    parts = [f"用户问题：{state.get('user_query', '')}"]
+    parts: list[str] = []
+    history = format_history(state.get("history"))
+    if history:
+        parts.append(history)
+    parts.append(f"用户问题：{state.get('user_query', '')}")
     context = state.get("context") or {}
     if context:
         parts.append(f"页面上下文：{json.dumps(context, ensure_ascii=False)}")
@@ -78,6 +85,7 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
         steps: list[dict] = []
         tool_results: list[dict] = []
         evidence: list[dict] = []
+        tool_payloads: list[Any] = []
 
         for _ in range(settings.max_tool_iterations):
             response: AIMessage = bound.invoke(messages)
@@ -136,9 +144,12 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                             "args": args,
                         }
                     )
+                    tool_payloads.append(result.data)
 
         messages.append(HumanMessage(CONCLUSION_INSTRUCTION))
         conclusion: AgentConclusion | None = None
+        degraded = False
+        degraded_reason: str | None = None
         for _attempt in range(2):
             response = model.invoke(messages)
             try:
@@ -150,15 +161,43 @@ def make_professional_node(agent_name: str, prompt: str, model: BaseChatModel):
                     HumanMessage("上一次输出无法解析，请只输出合法 JSON 对象。")
                 )
         if conclusion is None:
+            # 降级结论必须可识别，否则下游无法区分"分析结果"与"解析失败占位"
+            degraded = True
+            degraded_reason = "结论解析失败，已保留工具执行过程供人工复核"
             conclusion = AgentConclusion(
-                summary="结论解析失败，已保留工具执行过程供人工复核。",
+                summary=degraded_reason,
                 risk_level="medium",
                 sources=[item["source"] for item in evidence if item.get("source")],
             )
 
+        grounding = verify_grounding(
+            conclusion.model_dump(),
+            tool_payloads,
+            user_query=state.get("user_query", ""),
+        )
+        if not grounding.is_reliable:
+            steps.append(
+                {
+                    "label": f"证据校验：{len(grounding.unmatched)} 个数值未在工具结果中找到",
+                    "status": "warning",
+                    "tool": None,
+                }
+            )
+            emit_step(
+                f"证据校验：{len(grounding.unmatched)} 个数值未溯源",
+                status="warning",
+                detail="未溯源数值: " + ", ".join(grounding.unmatched[:8]),
+            )
+
         return {
             "agent_results": [
-                {"agent": agent_name, "conclusion": conclusion.model_dump()}
+                {
+                    "agent": agent_name,
+                    "conclusion": conclusion.model_dump(),
+                    "degraded": degraded,
+                    "degraded_reason": degraded_reason,
+                    "grounding": grounding.to_dict(),
+                }
             ],
             "steps": steps,
             "tool_results": tool_results,

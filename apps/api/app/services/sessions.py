@@ -3,9 +3,34 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from agent.state import AgentState
 from app.db import SessionLocal
 from models import AgentMessage, AgentSession, AnalysisTask
+
+# 注入提示词的最近消息条数（多轮上下文）
+HISTORY_LIMIT = 6
+
+
+def load_history(session_id: str | None, limit: int = HISTORY_LIMIT) -> list[dict]:
+    """读取最近 N 条会话消息，按时间正序返回 {role, content}。
+
+    没有历史时返回空列表 —— Agent 仍可正常工作，只是没有多轮上下文。
+    """
+    if not session_id:
+        return []
+    with SessionLocal() as db:
+        rows = db.scalars(
+            select(AgentMessage)
+            .where(AgentMessage.session_id == session_id)
+            .order_by(AgentMessage.id.desc())
+            .limit(limit)
+        ).all()
+    return [
+        {"role": item.role, "content": item.content or ""}
+        for item in reversed(rows)
+    ]
 
 
 def persist_agent_run(result: AgentState) -> None:

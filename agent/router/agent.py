@@ -11,6 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from agent.events import emit_step
+from agent.history import format_history
 from agent.state import AgentState
 
 NAME = "router"
@@ -165,10 +166,15 @@ def _normalize(decision: RouteDecision) -> RouteDecision:
 
 def make_node(model: BaseChatModel):
     def node(state: AgentState) -> dict[str, Any]:
-        task = (
-            f"用户问题：{state.get('user_query', '')}\n"
+        parts: list[str] = []
+        history = format_history(state.get("history"))
+        if history:
+            parts.append(history)
+        parts.append(f"用户问题：{state.get('user_query', '')}")
+        parts.append(
             f"页面上下文：{json.dumps(state.get('context') or {}, ensure_ascii=False)}"
         )
+        task = "\n".join(parts)
         try:
             response = model.invoke([SystemMessage(SYSTEM_PROMPT), HumanMessage(task)])
             decision = _normalize(

@@ -256,6 +256,8 @@ export default function AiDiagnosisPage() {
                     <li key={index} className="flex items-center gap-2 text-sm">
                       {step.status === "error" ? (
                         <span className="text-red-500">✕</span>
+                      ) : step.status === "warning" ? (
+                        <span className="text-amber-500">!</span>
                       ) : (
                         <span className="text-emerald-600">✓</span>
                       )}
@@ -305,8 +307,23 @@ export default function AiDiagnosisPage() {
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    共 {active.result.evidence_count ?? 0} 条证据，关键结论均可追溯至上述数据来源。
+                    共 {active.result.evidence_count ?? 0} 条证据
+                    {active.result.grounding && active.result.grounding.checked > 0
+                      ? `，数值证据校验：${active.result.grounding.matched}/${active.result.grounding.checked} 可在工具结果中溯源`
+                      : "，关键结论均可追溯至上述数据来源"}
+                    。
                   </p>
+                  {active.result.grounding?.unmatched?.length ? (
+                    <p className="mt-1 text-xs text-amber-600">
+                      未溯源数值（需人工复核）：{active.result.grounding.unmatched.slice(0, 8).join("、")}
+                    </p>
+                  ) : null}
+                  {active.result.grounding?.degraded_agents?.length ? (
+                    <p className="mt-1 text-xs text-amber-600">
+                      以下子分析未通过结构化解析，结论需人工复核：
+                      {active.result.grounding.degraded_agents.join("、")}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 

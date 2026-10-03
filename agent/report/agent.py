@@ -72,6 +72,32 @@ def merge_report_inputs(state: AgentState) -> dict[str, Any]:
         if source and source not in sources:
             sources.append(source)
 
+    # 降级与证据校验信号必须进入报告，避免"解析失败的占位结论"被当作分析结果
+    agent_results = state.get("agent_results", [])
+    degraded = [item.get("agent") for item in agent_results if item.get("degraded")]
+    grounding_checked = sum(
+        int((item.get("grounding") or {}).get("checked", 0)) for item in agent_results
+    )
+    grounding_matched = sum(
+        int((item.get("grounding") or {}).get("matched", 0)) for item in agent_results
+    )
+    unmatched = [
+        value
+        for item in agent_results
+        for value in (item.get("grounding") or {}).get("unmatched", [])
+    ]
+    if degraded:
+        findings.insert(
+            0,
+            f"注意：以下子分析未通过结构化解析（已降级为工具过程留痕），"
+            f"结论需人工复核：{', '.join(str(name) for name in degraded)}。",
+        )
+    if grounding_checked and unmatched:
+        findings.append(
+            f"证据校验：{grounding_matched}/{grounding_checked} 个结论数值可在工具返回结果中"
+            f"溯源；未溯源数值：{', '.join(unmatched[:8])}。"
+        )
+
     risk = "medium"
     for conclusion in conclusions:
         level = conclusion.get("risk_level", "medium")

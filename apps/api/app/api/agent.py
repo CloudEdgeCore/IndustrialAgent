@@ -13,7 +13,7 @@ from agent.runner import run_agent_streaming
 from app.api.auth import get_current_user
 from app.db import get_db
 from app.schemas import ChatRequest, MessageOut
-from app.services.sessions import persist_agent_run
+from app.services.sessions import load_history, persist_agent_run
 from models import AgentMessage, User
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -36,6 +36,8 @@ def agent_chat(
     user: Annotated[User, Depends(get_current_user)],
 ) -> StreamingResponse:
     model = getattr(request.app.state, "agent_model", None)
+    # 多轮会话：把该 session 的最近消息注入 Agent 提示词
+    history = load_history(payload.session_id)
 
     def stream() -> Iterator[str]:
         yield _sse(
@@ -47,6 +49,7 @@ def agent_chat(
             model=model,
             session_id=payload.session_id,
             on_complete=persist_agent_run,
+            history=history,
         ):
             yield _sse(event)
 

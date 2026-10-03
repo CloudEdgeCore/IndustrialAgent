@@ -8,6 +8,7 @@ class AgentState(TypedDict, total=False):
     session_id: str
     user_query: str
     context: dict[str, Any]  # 页面上下文：equipment_id / time_range / active_alarms
+    history: list[dict]  # 多轮会话历史（role/content），供 Router 与专业 Agent 理解上下文
     task_type: str  # router 输出
     agents: list[str]  # 路由到的专业 Agent
     need_report: bool
