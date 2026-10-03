@@ -235,7 +235,10 @@ def _retriever_citation(case: EvalCase) -> bool | None:
     """检索器诊断指标：top-k 内容是否命中引用关键词（不涉及 Agent）。"""
     if not case.expect_citation:
         return None
-    results = rag_search(case.query, top_k=3)
+    try:
+        results = rag_search(case.query, top_k=3)
+    except Exception:  # noqa: BLE001 - 检索器不可用时不计入分母
+        return None
     combined = " ".join(item["content"] for item in results)
     return any(keyword in combined for keyword in case.citation_keywords)
 
@@ -354,6 +357,7 @@ def _run_llm_case(case: EvalCase, model: Any) -> dict:
 
     return {
         "id": case.id,
+        "query": case.query,
         "intent_expected": case.expected_task_type,
         "intent_actual": result.get("task_type"),
         "intent_hit": result.get("task_type") == case.expected_task_type,
@@ -374,17 +378,91 @@ def _run_llm_case(case: EvalCase, model: Any) -> dict:
     }
 
 
-def run_llm_eval(cases: list[EvalCase] | None = None, model: Any = None) -> EvalReport:
-    """LLM 模式：完整 Agent 链路（需 LLM_API_KEY）。"""
+def _failed_case_detail(case: EvalCase, exc: BaseException) -> dict:
+    """单用例异常（LLM 超时 / 网络抖动 / 工具崩溃）不应中断整轮评测。
+
+    失败用例按"未命中"计入，并在 details 中保留 error 供人工排查 —— 静默丢弃会
+    让指标虚高，直接抛出则会让 40+ 分钟的评测前功尽弃。
+    """
+    return {
+        "id": case.id,
+        "query": case.query,
+        "error": f"{type(exc).__name__}: {exc}"[:300],
+        "intent_expected": case.expected_task_type,
+        "intent_actual": None,
+        "intent_hit": False,
+        "expected_agents": case.expected_agents,
+        "agents_actual": [],
+        "expected_tools": sorted(case.expected_tool_names),
+        "tools_called": [],
+        "tool_selection_hit": False,
+        "tool_recall": 0.0,
+        "tool_calls": 0,
+        "tool_calls_failed": [],
+        "citation_answer_hit": False if case.expect_citation else None,
+        "citation_retriever_hit": _retriever_citation(case),
+    }
+
+
+def _run_llm_case_safe(case: EvalCase, model: Any) -> dict:
+    try:
+        return _run_llm_case(case, model)
+    except Exception as exc:  # noqa: BLE001 - 单用例失败隔离
+        return _failed_case_detail(case, exc)
+
+
+def run_llm_eval(
+    cases: list[EvalCase] | None = None,
+    model: Any = None,
+    workers: int = 1,
+) -> EvalReport:
+    """LLM 模式：完整 Agent 链路（需 LLM_API_KEY）。
+
+    workers > 1 时按用例并发（每个用例内含串行工具循环）。串行跑 40+ 条用例、
+    数百次 LLM 调用在真实网络下需要数十分钟，且单次网络抖动会被 180s 超时 × 2 次
+    重试放大成分钟级阻塞 —— 并发 + 单用例隔离使评测在抖动环境下仍可完成。
+    """
     from agent.llm import get_chat_model
 
     model = model or get_chat_model()
     load_all_tools()
     if cases is None:
         cases = load_testset()
+
+    total = len(cases)
+    details: list[dict] = []
+
+    def _report_progress(index: int, detail: dict) -> None:
+        status = detail.get("error") or (
+            f"intent={detail.get('intent_actual')} calls={detail.get('tool_calls')} "
+            f"tools_ok={detail.get('tool_selection_hit')}"
+        )
+        print(f"  [{index}/{total}] {detail['id']} {status}", flush=True)
+
+    if workers > 1:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_run_llm_case_safe, case, model): case for case in cases
+            }
+            done = 0
+            for future in as_completed(futures):
+                done += 1
+                detail = future.result()
+                _report_progress(done, detail)
+                details.append(detail)
+        order = {case.id: index for index, case in enumerate(cases)}
+        details.sort(key=lambda item: order[item["id"]])
+    else:
+        for index, case in enumerate(cases, start=1):
+            detail = _run_llm_case_safe(case, model)
+            _report_progress(index, detail)
+            details.append(detail)
+
     report = EvalReport(
         mode="llm",
-        total=len(cases),
+        total=total,
         measures_agent_behavior=True,
         intent_hits=0,
         heuristic_intent_hits=0,
@@ -400,11 +478,10 @@ def run_llm_eval(cases: list[EvalCase] | None = None, model: Any = None) -> Eval
         citation_retriever_hits=0,
         citation_retriever_total=0,
     )
-    for case in cases:
-        detail = _run_llm_case(case, model)
+    for detail in details:
         report.intent_hits += int(detail["intent_hit"])
         report.heuristic_intent_hits += int(
-            heuristic_route(case.query).task_type == case.expected_task_type
+            heuristic_route(detail["query"]).task_type == detail["intent_expected"]
         )
         if detail["expected_tools"]:
             report.tool_selection_measured += 1
@@ -434,6 +511,9 @@ def _print_failures(report: EvalReport) -> None:
         if "note" in item:
             print("  ", item)
             continue
+        if "error" in item:
+            print(f"  用例 {item['id']}: 执行失败（计为未命中）{item['error']}")
+            continue
         if report.measures_agent_behavior:
             problems = []
             if not item.get("intent_hit"):
@@ -459,12 +539,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Agent Eval 评测")
     parser.add_argument("--llm", action="store_true", help="使用真实 LLM（需 API Key）")
     parser.add_argument("--limit", type=int, default=0, help="仅评测前 N 条用例（0=全部）")
+    parser.add_argument(
+        "--workers", type=int, default=1, help="并发用例数（仅 --llm 生效，默认 1）"
+    )
     args = parser.parse_args()
 
     cases = load_testset()
     if args.limit > 0:
         cases = cases[: args.limit]
-    report = run_llm_eval(cases) if args.llm else run_offline_eval(cases)
+    if args.llm:
+        report = run_llm_eval(cases, workers=max(1, args.workers))
+    else:
+        report = run_offline_eval(cases)
     print(report.summary())
     print("基线指标:", {k: round(v, 4) for k, v in report.baseline_metrics().items()})
     print("是否达标:", report.meets_baseline())

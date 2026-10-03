@@ -14,7 +14,9 @@ from evals.runner import (
     _answer_citation,
     _answer_text,
     _needs_knowledge_grounding,
+    load_testset,
 )
+from langchain_core.language_models.chat_models import BaseChatModel
 
 
 def _case(**overrides) -> EvalCase:
@@ -181,3 +183,61 @@ def test_empty_denominators_do_not_divide_by_zero() -> None:
     assert empty.tool_selection_rate == 0.0
     assert empty.citation_answer_rate == 0.0
     assert empty.tool_calls_per_case == 0.0
+
+
+# ------------------------------------------------- LLM 评测的失败隔离与并发
+
+
+class _BoomModel(BaseChatModel):
+    """任何调用都失败 —— 模拟 LLM 不可用 / 超时。"""
+
+    @property
+    def _llm_type(self) -> str:
+        return "boom"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise RuntimeError("llm unavailable")
+
+    def bind_tools(self, tools, **kwargs):  # type: ignore[override]
+        return self
+
+
+def _llm_cases() -> list[EvalCase]:
+    """取两条**必须靠 LLM 路由**的用例（启发式兜底必然判断错误）。"""
+    cases = [case for case in load_testset() if case.id in {"NV-009", "NV-010"}]
+    assert len(cases) == 2
+    return cases
+
+
+def test_llm_eval_isolates_case_failures() -> None:
+    """单用例失败应计为未命中，而不是中断整轮评测或静默丢弃。"""
+    from evals.runner import run_llm_eval
+
+    cases = _llm_cases()
+    report = run_llm_eval(cases, model=_BoomModel(), workers=1)
+    assert report.total == 2
+    assert report.intent_hits == 0, "失败用例不得计为命中"
+    assert report.tool_selection_measured == 2, "失败用例仍计入工具选择分母"
+    assert report.tool_selection_hits == 0
+    assert all("error" in detail for detail in report.details)
+    assert report.measures_agent_behavior is True
+    assert report.meets_baseline() == {"intent": False, "tool": False, "citation": False}
+
+
+def test_llm_eval_parallel_keeps_case_order() -> None:
+    from evals.runner import run_llm_eval
+
+    cases = _llm_cases()
+    report = run_llm_eval(cases, model=_BoomModel(), workers=2)
+    assert [detail["id"] for detail in report.details] == [case.id for case in cases]
+    assert report.total == 2
+
+
+def test_llm_eval_parallel_and_serial_agree() -> None:
+    from evals.runner import run_llm_eval
+
+    cases = _llm_cases()
+    serial = run_llm_eval(cases, model=_BoomModel(), workers=1)
+    parallel = run_llm_eval(cases, model=_BoomModel(), workers=2)
+    assert serial.baseline_metrics() == parallel.baseline_metrics()
+    assert serial.tool_call_success_rate == parallel.tool_call_success_rate

@@ -125,3 +125,6 @@ git -c http.sslBackend=openssl -c http.proxy=http://127.0.0.1:7890 push origin m
 | 2026-10-03 | Agent 层：接入多轮会话历史（`run_agent(history=...)`）、结论**数值 grounding 校验**、结论解析失败显式标记 | 原实现不读历史消息、LangGraph 无 checkpointer，"会话"仅持久化展示；Evidence 契约可由占位符满足且从不校验数值是否来自工具输出；解析失败伪装为正常结论 | 会话具备真实多轮上下文；结论附带 grounding 校验结果 | 用户 |
 | 2026-10-03 | 修复 Analysis Tool 缺陷：Pareto 累计 80% 边界、Spearman 并值秩、`describe` 与 SQL `stddev` 口径统一、meta 补 `source` | 统计口径不一致与边界错误会导致结论数值不可靠 | 分析数值更可靠，meta 满足可追溯要求 | 用户 |
 | 2026-10-03 | 文档诚实化：README 按实测数据重写指标与限制、`05-开发计划.md` 补 P7 阶段、`CLAUDE.md` 增加 P7 说明 | 原 README 引用的"178 passed / 三项 100% / 4.5% 不良率"与实际复现结果不符 | 对外表述与可复现证据一致 | 用户 |
+| 2026-10-03 | CI/测试独立性：`tests/conftest.py` 增加会话级知识库导入 fixture；CI 增加 `python -m tools.rag ingest` | `test_api_db.py` 断言文档数 ≥ 6，但唯一导入文档的 fixture 在字母序更晚的文件里 —— 全新数据库（CI）下必然失败 | 集成测试不再依赖执行顺序；CI 与 README 快速开始一致 | 用户 |
+| 2026-10-03 | Eval 工程化：LLM 模式支持 `--workers` 并发 + 单用例失败隔离（异常计为未命中并保留 error）+ 逐用例进度输出 | 串行 42 用例、数百次 LLM 调用在真实网络下需数十分钟；单次网络抖动被 180s 超时 ×2 重试放大成分钟级阻塞，整轮评测可能卡死且无任何输出 | 评测在抖动网络下仍可完成，且失败可定位；指标不因失败被静默丢弃 | 用户 |
+| 2026-10-03 | nginx 上游改为变量 + Docker DNS resolver 动态解析 | 静态 upstream 只在启动时解析一次 DNS，backend/frontend 容器重建换 IP 后全部请求 502（本地已复现） | 容器重建无需重启 nginx | 用户 |
