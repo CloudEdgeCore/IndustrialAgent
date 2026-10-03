@@ -32,14 +32,17 @@ Industrial Agent 面向制造企业的**设备、工艺、质量**场景，将�
 |---|---|
 | 设备故障诊断 | 结合实时/历史时序、报警事件、维修案例与知识库，输出根因候选、排查顺序与风险等级 |
 | 工艺异常分析 | 工艺参数相关性 / 趋势 / 异常窗口分析（示例：LINE-2 压力波动与阀门开度相关系数 0.93） |
-| 质量问题溯源 | 不良率趋势、缺陷 Pareto、设备与班次分布、根因定位（示例：PRD-A 不良率 1.8% → 4.5%，定位至 EQ-003） |
+| 质量问题溯源 | 不良率趋势、缺陷 Pareto、设备与班次分布、根因定位（示例：PRD-A 近 3 天不良率 3.5% vs 基线 1.8%，定位至 EQ-003 / surface_crack） |
 | 工业知识问答 | 向量 + 关键词混合检索（RRF + Rerank），回答携带 文档 / 章节 / 版本 引用 |
 | 自动报告生成 | Evidence-based 结构化报告落库，支持 Markdown 导出与打印 PDF |
-| 全链路可观测 | Langfuse 追踪（可选接入）、工具调用审计日志、SSE 执行步骤可视化 |
+| 数值证据校验 | 结论中的测量值与工具返回 payload 做容差比对，产出"可溯源比例 + 未溯源清单"（见 §8.3） |
+| 数据新鲜度可见 | 分析窗口锚定数据末尾，界面明确标注"数据截至 + 滞后"（见 §5.7） |
+| 多轮会话 | 会话历史注入 Router 与专业 Agent 提示词，支持追问 |
+| 全链路可观测 | Langfuse 追踪（可选接入）、工具调用审计日志（含越权尝试）、SSE 执行步骤可视化 |
 
 设计原则：
 
-- **Evidence-based**：问题描述、数据范围、异常发现、根因候选、证据、排查顺序、风险、来源，缺一不可（架构红线）。
+- **Evidence-based**：问题描述、数据范围、异常发现、根因候选、证据、排查顺序、风险、来源，缺一不可（架构红线）；并由**数值 grounding 校验**把"禁止编造数值"从提示词约束变成可量化信号。
 - **Tool-first**：Agent 不直接访问数据库，一律经工具层（Registry → 权限校验 → Executor）；禁止 LLM 生成任意 SQL。
 - **LLM 可替换**：统一 OpenAI-compatible 接口，默认 Qwen DashScope 兼容模式，可切换任意兼容端点。
 
@@ -75,9 +78,24 @@ Industrial Agent 面向制造企业的**设备、工艺、质量**场景，将�
 ### 安全边界（架构红线）
 
 1. **Agent 数量锁定**：1 Router + 4 专业 Agent（Equipment / Process / Quality / Report），不新增；
-2. **SQL 全链路受控**：Query Planner → 结构化 Query → SQL Builder → Validator → 只读账号 `tool_ro`（双层防线）；
-3. **权限矩阵**：每个 Agent 只能调用白名单内的工具，越权调用被拦截并写入审计日志；
+2. **SQL 全链路受控**：Query Planner → 结构化 Query → SQL Builder → Validator → 只读账号 `tool_ro`（双层防线）。Validator 在 `run_readonly_query` 内**强制调用**，`allowed_tables` 为必填参数，任何新查询路径（含 RAG 检索）都无法绕过；
+3. **权限矩阵**：每个 Agent 只能调用白名单内的工具，越权调用被拦截并写入审计日志（未知工具、权限拒绝、参数非法、执行异常、成功五种结果全部留痕）；
 4. **Analysis 白名单执行**：仅允许预定义统计算子（相关性 / z-score / IQR / 趋势 / Isolation Forest / Pareto 等），禁止执行任意系统代码。
+
+### 数据窗口锚点（为什么不是 `datetime.now()`）
+
+模拟/回放数据集的时间轴末尾固定在生成时刻。若相对时间窗口锚定真实时钟，数据落库数天后
+"最近 24 小时 / 最近 3 天" 会滑出数据集：图表变空、不良率场景退化为基线、测试静默失败。
+
+因此 `tools/freshness.py` 提供统一**窗口锚点**：
+
+| `WINDOW_ANCHOR` | 行为 | 适用 |
+|---|---|---|
+| `data`（默认） | 窗口锚定"数据最新时间" | 模拟 / 回放数据集、Demo、CI |
+| `now` | 窗口锚定真实时钟 | 接入实时数据流的生产环境（滞后由 `/api/meta/freshness` 暴露） |
+
+窗口锚点同时写入工具返回的 `meta.window`（anchor / anchor_source / data_lag_hours），
+因此"最近 24 小时"这类相对窗口始终可还原为绝对时间区间。
 
 ## 3. 技术栈
 
@@ -106,17 +124,20 @@ industrial-agent/
 │   ├── router/                     #   意图路由
 │   ├── equipment/  process/        #   设备 / 工艺 Agent
 │   ├── quality/    report/         #   质量 / 报告 Agent
+│   ├── grounding.py                #   结论数值 grounding 校验
+│   ├── history.py                  #   多轮会话历史渲染
 │   └── runner.py                   #   运行入口 run_agent()
 ├── tools/                          # 工具层（Registry + 权限 + 审计）
 │   ├── sql/  timeseries/           #   结构化查询 / 时序查询
 │   ├── rag/  analysis/  reports/   #   混合检索 / 白名单统计 / 报告生成
+│   ├── freshness.py                #   数据新鲜度与窗口锚点
 │   └── loader.py                   #   工具注册与加载
 ├── models/                         # SQLAlchemy 数据模型（15 张表）
 ├── data/
 │   ├── simulator/                  # 可复现数据模拟器（固定种子）
 │   └── fixtures/                   # 设备/报警/缺陷/产线目录 + 场景清单
 ├── tests/
-│   ├── evals/                      # Agent 评测（32 条工业问题测试集）
+│   ├── evals/                      # Agent 评测（42 条工业问题 + report.json 证据）
 │   └── integration/                # 数据库 / 接口集成测试
 ├── docker/                         # Dockerfile / nginx / initdb
 ├── docs/                           # PRD / 架构 / 选型 / 页面设计 / DEMO
@@ -197,17 +218,18 @@ pnpm dev        # http://localhost:3000（端口占用时：pnpm dev --port 3001
 | `DATABASE_URL` | 业务库连接（psycopg3） | `postgresql+psycopg://industrial:industrial@localhost:5432/industrial_agent` |
 | `TOOL_DATABASE_URL` | 工具层只读账号（仅 SELECT） | `tool_ro:tool_ro@...` |
 | `REDIS_URL` | 会话与缓存 | `redis://localhost:16379/0` |
+| `WINDOW_ANCHOR` | 相对时间窗口锚点：`data`（数据末尾）/ `now`（真实时钟） | `data` |
 | `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | OpenAI-compatible LLM 配置 | DashScope / `qwen-plus` |
 | `JWT_SECRET` / `JWT_EXPIRE_MINUTES` | 鉴权配置（生产必改） | `dev-secret-change-me` / 720 |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` / `MINIO_ENDPOINT` | 对象存储 | minioadmin |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`（可选） | LLM 全链路追踪；未配置零开销跳过 | — |
-| `EMBEDDING_*`（可选） | 外部 Embedding；未配置使用确定性本地实现（离线可测） | `bge-m3` / 1024 维 |
+| `EMBEDDING_*`（可选） | 外部 Embedding；未配置使用确定性特征哈希实现（**词法级，非语义向量**） | `bge-m3` / 1024 维 |
 
 ### 5.6 模拟数据说明
 
 - 30 台设备（CNC / 注塑机 / 装配线）× 3 条产线、9 类报警、6 类缺陷字典；
 - 固定随机种子（`--seed 42`），同种子 + 锚点完全可复现；场景清单输出至 `data/fixtures/manifest.json`；
-- 内置演示场景：EQ-003 主轴超温（E102，连续 24 分钟 > 85℃、冷却液流量 -18%）· EQ-024 停机 6h · LINE-2 压力波动 · PRD-A 不良率 1.8% → 4.5%；
+- 内置演示场景：EQ-003 主轴超温（E102，连续 24 分钟 > 85℃、冷却液流量 -18%）· EQ-024 停机 6h · LINE-2 压力波动 · PRD-A 近 3 天不良率 1.8% → **3.5%**（EQ-003 单台升至 15%，surface_crack 占该台缺陷 70%）；
 - 快速档（CI / 低配机器）：`python -m data.simulator --days 2 --quality-days 5 --history-days 10`。
 
 ## 6. 使用指南
@@ -259,6 +281,7 @@ data: {"type":"result","final_answer":"…","report_id":12}
 | 方法 | 路径 | 说明 | 鉴权 |
 |---|---|---|---|
 | GET | `/health` | 健康检查 | 否 |
+| GET | `/meta/freshness` | 数据新鲜度：窗口锚点 / 锚点来源 / 滞后小时数 / 各领域最新时间 | 否 |
 | POST | `/auth/login` | 登录 → JWT | 否 |
 | POST | `/auth/logout` | 登出（Redis 会话吊销，可降级） | 是 |
 | GET | `/auth/me` | 当前用户 | 是 |
@@ -301,36 +324,100 @@ data: {"type":"result","final_answer":"…","report_id":12}
 
 所有工具统一经 **Registry → 权限矩阵 → 审计日志** 执行。
 
+审计记录覆盖 **not_found / denied / invalid / error / ok** 五种结果 —— 越权尝试同样留痕，
+便于安全分析。日志以 JSON Lines 输出到 stdout（Docker 直接采集）：
+
+```json
+{"event":"tool_call","agent":"report","tool":"timeseries.query","status":"denied",
+ "error":"agent 'report' 无权调用工具 'timeseries.query'"}
+```
+
+### 8.3 数值 grounding 校验（把红线变成机制）
+
+Evidence 契约（字段齐备）由 Pydantic 保证，但"禁止编造数值"原先只是提示词约束 ——
+幻觉数值同样能通过 schema。`agent/grounding.py` 把结论中的数值与工具真实 payload 做比对：
+
+| 规则 | 说明 |
+|---|---|
+| 计入校验 | 带小数点的数值，或 ≥10 且**不带**时长/计数单位的整数 |
+| 不计入 | 时长与计数（`连续 24 分钟`、`最近 3 天`、`1 号产线`）、用户问题中已给出的数值 |
+| 容差 | 相对 1% 或绝对 0.05（结论常做四舍五入：payload `92.17` → 结论 `92.2`） |
+| 判定 | 样本 ≥3 且可溯源比例 <80% 时发出 `warning` 步骤事件；未溯源数值写入报告与界面 |
+
+SSE `result` 事件附带汇总：`grounding.checked / matched / unmatched / degraded_agents`。
+结论解析失败时不再伪装成正常结论，而是显式标记 `degraded` 并进入报告 findings。
+
 ## 9. 测试与质量保障
 
 ### 9.1 自动化测试
 
 ```bash
-pytest                                  # 后端（本机实测 178 passed；无数据库时集成测试自动跳过）
-ruff check .                            # 后端 lint
+pytest                                  # 后端：257 项（其中 60 项为数据库集成测试，无库时自动跳过）
+ruff check .                            # 后端 lint：0 错误
 cd apps/web && pnpm lint && pnpm build  # 前端检查与构建
 ```
+
+集成测试不依赖执行顺序：会话级 fixture 会确保知识库已导入（无库时静默跳过）。
 
 ### 9.2 Agent Eval
 
 ```bash
-python tests/evals/runner.py            # 离线模式（无需 Key，CI 用）
-python tests/evals/runner.py --llm      # 真实 LLM 模式（需 LLM_API_KEY）
-pytest tests/evals                      # pytest 入口
+python tests/evals/runner.py                     # 离线模式（无需 Key，CI 用）
+python tests/evals/runner.py --llm --workers 6   # 真实 LLM 全量（42 条，6 并发）
+python tests/evals/runner.py --rescore           # 不重跑，按当前口径重新聚合
+pytest tests/evals                               # pytest 入口（离线部分）
 ```
 
-| 模式 | 测试集 | 意图准确率 | 工具成功率 | 引用正确率 |
-|---|---|---|---|---|
-| 离线（CI） | 32 条 | 100% | 100% | 100% |
-| 真实 Qwen（抽样） | 12 条 | 100% (12/12) | 97.6% (204/209) | 100% (8/8) |
-| 验收基线（`CLAUDE.md` §9） | ≥ 30 条 | ≥ 90% | ≥ 95% | ≥ 90% |
+**指标口径**（完整定义见 `tests/evals/runner.py` 顶部与 `report.json.metric_definitions`）：
+
+| 指标 | 定义 | 为什么这样定义 |
+|---|---|---|
+| `intent_acc` | LLM Router 产出的 task_type 与期望一致 | **产品指标** |
+| `heuristic_intent_acc` | 关键词降级路由准确率 | 只代表兜底路径，**不代表 Agent 能力** |
+| `tool_selection_rate` | 期望工具集合被**完整覆盖**的用例占比（按用例，不按调用次数） | "调用了很多工具且都没报错"不应得分 |
+| `tool_recall` / `tool_calls_per_case` | 期望工具召回率 / 平均调用次数 | 召回率 + 效率信号 |
+| `tool_call_success_rate` | 工具调用未报错比例 | 稳定性，**不代表选对工具** |
+| `citation_answer_rate` | 需要知识库支撑的用例中，真的检索过知识库**且**关键词进入回答 | 端到端引用；只测检索器会变成自证 |
+| `citation_retriever_rate` | 检索器 top-k 命中关键词 | 检索器诊断指标 |
+
+**实测结果**（42 条测试集，真实 Qwen，6 并发；`report.json` 已随仓库提交，可逐用例复核）：
+
+| 指标 | 全量（42 条） | 排除基础设施失败（31 条） | 基线 |
+|---|---|---|---|
+| 意图路由（LLM） | 73.8% (31/42) | **100% (31/31)** | ≥ 90% |
+| 工具选择（严格） | 73.8% (31/42) | **100% (31/31)** | ≥ 95% |
+| 引用（端到端） | 71.4% (10/14) | **100% (10/10)** | ≥ 90% |
+| 工具调用成功率 | 97.5% (463/475) | — | ≥ 95% |
+| 平均工具调用次数 | 11.3 次/用例 | — | 观测项 |
+| 引用（检索器诊断） | 100% (22/22) | — | — |
+| 意图路由（启发式兜底） | 92.9% (39/42) | — | 参考 |
+
+> **为什么有两列**：本轮 42 条中有 **11 条因本机 HTTP 代理网络超时（`OpenAITimeoutError`）
+> 未能执行**。这些用例被保守地计为"未命中"（全量列），同时单独统计并剔除后给出有效用例列
+> —— 逐用例明细见 `report.json.details`，每条失败都带 `error` 字段。
+> **两个口径都披露，基线判定使用有效用例口径**：只报前者会低估系统能力，只报后者会掩盖失败率。
+>
+> 网络失败数在多次运行间波动（实测 8~11 条），且全部来自同一类代理超时；
+> **有效用例口径在三次独立全量运行中稳定为 97%~100% / 100% / 100%**。
+
+离线模式（`pytest tests/evals`，CI 用，**不执行 Agent**）：启发式兜底路由 92.9% (39/42) ·
+工具参数可用性 100% (39/39) · 检索器命中 100% (22/22)。
+
+> 离线模式只验证兜底路由、工具参数兼容性与检索器，**不能作为 Agent 质量证据** ——
+> 离线报告的 `measures_agent_behavior` 恒为 `false`（有测试锁定该语义）。
+>
+> 两种模式的报告分开落盘，避免互相覆盖：`tests/evals/report.json`（LLM，随仓库提交）与
+> `tests/evals/report-offline.json`（离线，可随时由 `pytest tests/evals` 复现，不入库）。
 
 ### 9.3 持续集成
 
 GitHub Actions（`.github/workflows/ci.yml`）：
 
-- **backend**：ruff → Alembic 迁移 → 模拟数据（快速档）→ pytest（TimescaleDB 服务容器）；
+- **backend**：ruff → Alembic 迁移 → 模拟数据（快速档）→ 知识库导入 → pytest（TimescaleDB 服务容器）；
 - **frontend**：pnpm lint → pnpm build。
+
+CI 不含真实 LLM 步骤（无 Key），因此 `runner.py --llm` 的全量指标需本地复跑；离线 Eval 由
+`pytest tests/evals` 覆盖。
 
 ## 10. 项目状态
 
@@ -343,26 +430,45 @@ GitHub Actions（`.github/workflows/ci.yml`）：
 | P4 | API 层（REST + SSE + JWT） | ✅ | 2026-09-29 |
 | P5 | Web 层（5 个核心页面） | ✅ | 2026-09-29 |
 | P6 | 打磨与验收（Langfuse / 报告导出 / Demo） | ✅ | 2026-09-30 |
+| P7 | 加固与**验收诚实化**（窗口锚点 / Eval 口径重构 / RAG 排序与索引 / 审计收口 / 会话记忆与 grounding） | ✅ | 2026-10-03 |
 
-PRD §11 验收对照（要点）：
+> **关于 P7**：项目主体在 P0~P6 完成。P7 是对"已完成"状态做**独立复核**后的整改 ——
+> 复核方式是实际跑测试、跑 Eval、连库查数、全栈冒烟，发现了三类问题并全部修复：
+> ① 演示数据时效性腐烂（2 个集成测试失败、核心场景不可复现）；
+> ② Eval 指标循环论证（不能作为 Agent 质量证据）；③ 若干机制缺位（审计不可见、
+> RAG 关键词臂排序不确定、会话无记忆、Evidence 无 grounding）。
+> 详细变更登记见 `CLAUDE.md` §11。
+
+PRD §11 验收对照（要点，数值为 2026-10-03 实测）：
 
 | 验收项 | 结果 |
 |---|---|
-| 自然语言查询设备 | ✅ 真实 Qwen 实测（温度峰值 92℃、冷却液流量 18 → 14.9 L/min 证据链） |
-| Agent 正确选择工具 | ✅ 权限矩阵 + Eval 工具成功率 97.6% ~ 100% |
+| 自然语言查询设备 | ✅ 真实 Qwen 实测（EQ-003 温度峰值 92.17℃、冷却液流量 18 → 14.6 L/min 证据链） |
+| Agent 正确选择工具 | ✅ 工具选择 100% (31/31 有效用例)；权限矩阵 + 越权审计留痕 |
 | 读取设备时序数据 | ✅ TimescaleDB hypertable（series / stats / anomaly_windows） |
-| 质量数据统计 | ✅ 不良率 ~4.5% vs 基线 ~1.8%（Pareto / 设备 / 班次分布） |
-| 知识回答带引用来源 | ✅ RAG 引用正确率 100% |
+| 质量数据统计 | ✅ 近 3 天不良率 3.5% vs 基线 1.8%（EQ-003 单台 15%），Pareto 首位 surface_crack |
+| 知识回答带引用来源 | ✅ 端到端引用 100% (10/10)；检索器命中 100% (22/22) |
 | 生成完整诊断报告 | ✅ Evidence-based 报告落库 + Markdown 导出 |
-| ≥ 30 问测试集 | ✅ 32 条（`tests/evals/testset.jsonl`） |
-| 意图 / 工具 / 引用指标 | ✅ 意图 100% · 工具 97.6% · 引用 100%（基线 90 / 95 / 90） |
-| 关键结果可追溯 | ✅ 结论含数值 + 来源 + 工具调用审计日志 |
+| ≥ 30 问测试集 | ✅ 42 条（`tests/evals/testset.jsonl`），每条声明期望工具 |
+| 意图 / 工具 / 引用指标 | ✅ 有效用例口径 100% / 100% / 100%（基线 90 / 95 / 90）；全量口径见 §9.2 |
+| 关键结果可追溯 | ✅ 结论含数值 + 来源；审计日志覆盖全部调用结果；数值 grounding 校验 |
+| 数据窗口可复现 | ✅ 窗口锚定数据末尾（`WINDOW_ANCHOR`），场景不随落库时间失效 |
 
 已知限制：
 
-- PDF / Word 文档解析尚未接入（`tools/rag/parser.py` 已预留接口，当前支持 Markdown / 纯文本知识库）；
-- 工艺分析、质量追溯、系统设置页面为占位页，相关能力可通过 AI 诊断页与 API 使用；
-- 真实 LLM Eval 当前为 12 条抽样，全量 32 条复跑进行中。
+- **默认检索是词法级的**：未配置 `EMBEDDING_BASE_URL` 时使用特征哈希实现（词袋 + 符号），
+  不是语义向量；"向量臂"因此退化为第二路词法检索。生产使用需配置真实 Embedding 模型
+  （bge-m3 等）并重建索引。
+- **Rerank 不是模型**：`rerank_score = rrf × (1 + 0.15 × 词元重叠率)`，是可解释的轻量策略，
+  非 Cross-Encoder。
+- PDF / Word 文档解析尚未接入（`tools/rag/parser.py` 已预留接口，当前支持 Markdown / 纯文本）。
+- 工艺分析、质量追溯、系统设置为占位页，相关能力可通过 AI 诊断页与 API 使用。
+- 业务读接口（设备 / 质量 / 知识库 / 报告）当前未挂鉴权，仅 Agent 端点强制 JWT。
+- 窗口锚点默认 `data`（面向回放数据集）。接入实时数据流需设 `WINDOW_ANCHOR=now`，
+  否则窗口会停在数据末尾；数据滞后请以 `/api/meta/freshness` 为准。
+- 工具调用次数偏高（复杂问题单次约 10~25 次），是提示词与循环上限调优空间，
+  已作为指标 `tool_calls_per_case` 纳入 Eval 观测。
+- 单机 Docker Compose 部署，未做水平扩展、限流与多租户隔离。
 
 ## 11. 文档索引
 

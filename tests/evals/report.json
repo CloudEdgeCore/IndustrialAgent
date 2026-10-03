@@ -1,0 +1,1457 @@
+{
+  "mode": "llm",
+  "measures_agent_behavior": true,
+  "summary": "[llm] 意图(LLM) 73.8% (31/42) | 工具选择 73.8% (31/42) | 工具召回 73.8% | 调用成功率 97.5% (463/475) | 调用次数/用例 11.3 | 引用(端到端) 71.4% (10/14) | 引用(检索器) 100.0% (22/22) | 执行失败 11",
+  "metric_definitions": {
+    "intent_acc": "LLM Router 的 task_type 准确率（产品指标）",
+    "heuristic_intent_acc": "关键词降级路由准确率（仅兜底路径，非 Agent 能力）",
+    "tool_selection_rate": "期望工具集合被完整覆盖的用例占比（严格）",
+    "tool_recall": "期望工具被实际调用的平均比例",
+    "tool_call_success_rate": "工具调用未报错比例（稳定性，不代表选对）",
+    "tool_availability_rate": "离线模式：期望工具按测试集参数可成功执行的比例",
+    "citation_answer_rate": "需要知识库支撑的用例中，回答带上知识库事实且实际检索过的比例（端到端）",
+    "citation_retriever_rate": "检索器 top-k 命中关键词（检索器诊断）"
+  },
+  "metrics": {
+    "intent_acc": 0.7381,
+    "heuristic_intent_acc": 0.9286,
+    "tool_selection_rate": 0.7381,
+    "tool_recall": 0.7381,
+    "tool_call_success_rate": 0.9747,
+    "tool_calls_per_case": 11.31,
+    "tool_availability_rate": 0.0,
+    "citation_answer_rate": 0.7143,
+    "citation_retriever_rate": 1.0
+  },
+  "baseline_metrics": {
+    "intent": 0.7381,
+    "tool": 0.7381,
+    "citation": 0.7143
+  },
+  "baseline_metrics_excluding_infra_failures": {
+    "intent": 1.0,
+    "tool": 1.0,
+    "citation": 1.0
+  },
+  "meets_baseline": {
+    "intent": true,
+    "tool": true,
+    "citation": true
+  },
+  "counts": {
+    "total": 42,
+    "case_errors": 11,
+    "tool_selection_measured": 42,
+    "tool_calls_total": 475,
+    "citation_answer_total": 14,
+    "citation_retriever_total": 22
+  },
+  "details": [
+    {
+      "id": "EQ-001",
+      "query": "3 号设备主轴温度连续 20 分钟超过 85℃，同时出现 E102 报警，帮我分析原因。",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.alarm_search",
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": false,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "EQ-002",
+      "query": "EQ-003 最近 24 小时的温度趋势如何？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 13,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "EQ-003",
+      "query": "设备 EQ-017 的振动数据正常吗？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 23,
+      "tool_calls_failed": [
+        {
+          "tool": "timeseries.query",
+          "args": {
+            "kind": "sensor",
+            "entity_id": "EQ-017",
+            "metric": "vibration",
+            "op": "series",
+            "relative": "last_7d",
+            "bucket": "6h",
+            "agg": "avg"
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"参数校验失败: 1 validation error for TimeSeriesParams\\nbucket\\n  Input should be '1m', '5m', '15m', '1h' or '1d' [type=literal_error, input_value='6h', input_type=str]\\n    For further informatio",
+          "error": "参数校验失败: 1 validation error for TimeSeriesParams\nbucket\n  Input should be '1m', '5m', '15m', '1h' or '1d' [type=literal_error, input_value='6h', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "EQ-004",
+      "query": "哪些设备当前有活跃报警？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "sql.alarm_search",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 3,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "EQ-005",
+      "query": "EQ-024 为什么停机了？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 23,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "EQ-006",
+      "query": "E102 报警应该怎么处理？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.alarm_search"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 20,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "EQ-007",
+      "query": "主轴温度过高一般是什么原因？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 7,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "EQ-008",
+      "query": "EQ-003 最近 30 天出现过哪些故障和维修？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.history_case"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 19,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "EQ-009",
+      "query": "检查 1 号数控加工中心最近 7 天的振动数据。",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 24,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "EQ-010",
+      "query": "E501 振动超限报警是什么意思？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.alarm_search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 6,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "PR-001",
+      "query": "分析昨天 2 号产线压力波动异常的原因。",
+      "intent_expected": "process_analysis",
+      "intent_actual": "process_analysis",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "process"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 30,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "PR-002",
+      "query": "2 号产线压力与阀门开度有关联吗？",
+      "intent_expected": "process_analysis",
+      "intent_actual": "process_analysis",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "process"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 21,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "PR-003",
+      "query": "3 号产线最近工艺参数趋势怎么样？",
+      "intent_expected": "process_analysis",
+      "intent_actual": "process_analysis",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "process"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 28,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "quality_inspections",
+            "filters": [
+              {
+                "field": "line_id",
+                "op": "=",
+                "value": "LINE-3"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_30d\"}",
+            "order_by": [
+              {
+                "field": "inspected_at",
+                "desc": true
+              }
+            ],
+            "limit": 30
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"过滤字段不在白名单: line_id\"}",
+          "error": "过滤字段不在白名单: line_id"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "PR-004",
+      "query": "1 号产线流量数据正常吗？",
+      "intent_expected": "process_analysis",
+      "intent_actual": "process_analysis",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "process"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 18,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "alarms",
+            "filters": [
+              {
+                "field": "line_id",
+                "op": "=",
+                "value": "LINE-1"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_7d\"}",
+            "limit": 50
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"过滤字段不在白名单: line_id\"}",
+          "error": "过滤字段不在白名单: line_id"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "PR-005",
+      "query": "统计昨天 2 号产线压力的最高值。",
+      "intent_expected": "process_analysis",
+      "intent_actual": "process_analysis",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "process"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 10,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "PR-006",
+      "query": "工艺参数波动大应该怎么排查？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": false,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "PR-007",
+      "query": "2 号产线速度参数有没有异常？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "process_analysis",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "PR-008",
+      "query": "液压压力异常 E201 的可能原因是什么？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "process"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 19,
+      "tool_calls_failed": [
+        {
+          "tool": "timeseries.query",
+          "args": {
+            "kind": "process",
+            "entity_id": "EQ-020",
+            "metric": "pressure",
+            "op": "stats",
+            "start": "2026-09-21T18:00:00+00:00",
+            "end": "2026-09-22T04:00:00+00:00"
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"参数校验失败: 1 validation error for TimeSeriesParams\\n  Value error, 非法产线编号: EQ-020（应形如 LINE-2） [type=value_error, input_value={'kind': 'process', 'enti...6-09-22T04:00:00+00:00'}, input_type=di",
+          "error": "参数校验失败: 1 validation error for TimeSeriesParams\n  Value error, 非法产线编号: EQ-020（应形如 LINE-2） [type=value_error, input_value={'kind': 'process', 'enti...6-09-22T04:00:00+00:00'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+        },
+        {
+          "tool": "timeseries.query",
+          "args": {
+            "bucket": "15m",
+            "end": "2026-09-22T04:00:00+00:00",
+            "entity_id": "EQ-020",
+            "kind": "sensor",
+            "metric": "hydraulic_pressure",
+            "op": "series",
+            "start": "2026-09-21T18:00:00+00:00"
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"参数校验失败: 1 validation error for TimeSeriesParams\\n  Value error, 非法传感器指标: hydraulic_pressure（可用: ['temperature', 'pressure', 'speed', 'vibration', 'current', 'flow']） [type=value_error, inpu",
+          "error": "参数校验失败: 1 validation error for TimeSeriesParams\n  Value error, 非法传感器指标: hydraulic_pressure（可用: ['temperature', 'pressure', 'speed', 'vibration', 'current', 'flow']） [type=value_error, input_value={'bucket': '15m', 'end': ...6-09-21T18:00:00+00:00'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+        }
+      ],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "QU-001",
+      "query": "最近 3 天 A 产品不良率为什么从 1.8% 升到 4.6%？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "quality_trace",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": false,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "QU-002",
+      "query": "A 产品最近 3 天的主要缺陷类型分布是什么？",
+      "intent_expected": "quality_trace",
+      "intent_actual": "quality_trace",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "quality"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 15,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "QU-003",
+      "query": "不良品主要集中在哪台加工中心？",
+      "intent_expected": "quality_trace",
+      "intent_actual": "quality_trace",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "quality"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 20,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "defects",
+            "filters": [
+              {
+                "field": "equipment_id",
+                "op": "=",
+                "value": "EQ-003"
+              }
+            ],
+            "limit": 10,
+            "order_by": [
+              {
+                "desc": true,
+                "field": "created_at"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_1d\"}"
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"过滤字段不在白名单: equipment_id\"}",
+          "error": "过滤字段不在白名单: equipment_id"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "QU-004",
+      "query": "表面裂纹怎么判定？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 10,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "defects",
+            "filters": [
+              {
+                "field": "defect_type",
+                "op": "like",
+                "value": "裂纹"
+              }
+            ],
+            "limit": 50
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"过滤字段不在白名单: defect_type\"}",
+          "error": "过滤字段不在白名单: defect_type"
+        }
+      ],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "QU-005",
+      "query": "夜班和白班的不良率有差异吗？",
+      "intent_expected": "quality_trace",
+      "intent_actual": "quality_trace",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "quality"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 10,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "QU-006",
+      "query": "最近的 A 产品批次检验情况怎么样？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "quality_trace",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "QU-007",
+      "query": "不良率超过多少要重点关注？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 15,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "defects",
+            "group_by": [
+              "defect_type"
+            ],
+            "metrics": [
+              {
+                "func": "count",
+                "field": "*",
+                "alias": "cnt"
+              }
+            ],
+            "limit": 50
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"分组字段不在白名单: defect_type\"}",
+          "error": "分组字段不在白名单: defect_type"
+        }
+      ],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "QU-008",
+      "query": "尺寸偏差缺陷多吗？",
+      "intent_expected": "quality_trace",
+      "intent_actual": "quality_trace",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "quality"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 10,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "defects",
+            "group_by": [
+              "defect_type"
+            ],
+            "metrics": [
+              {
+                "func": "count",
+                "field": "*",
+                "alias": "cnt"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_3d\"}",
+            "order_by": [
+              {
+                "field": "cnt",
+                "desc": true
+              }
+            ]
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"分组字段不在白名单: defect_type\"}",
+          "error": "分组字段不在白名单: defect_type"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "MX-001",
+      "query": "设备温度异常且不良率升高，请生成报告。",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "mixed",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "equipment",
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "MX-002",
+      "query": "帮我生成一份今天的生产日报。",
+      "intent_expected": "report",
+      "intent_actual": "report",
+      "intent_hit": true,
+      "expected_agents": [],
+      "agents_actual": [],
+      "expected_tools": [
+        "report.generate"
+      ],
+      "tools_called": [
+        "report.generate"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 1,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "MX-003",
+      "query": "综合分析 3 号设备温度异常对产品质量的影响，并出报告。",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "mixed",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "equipment",
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "MX-004",
+      "query": "2 号产线压力波动是否影响到了产品质量？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "mixed",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "process",
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "MX-005",
+      "query": "3 号设备的冷却系统可能出了什么问题？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 22,
+      "tool_calls_failed": [
+        {
+          "tool": "timeseries.query",
+          "args": {
+            "bucket": "5m",
+            "entity_id": "EQ-003",
+            "kind": "sensor",
+            "metric": "coolant_level",
+            "op": "series",
+            "relative": "last_3h"
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"参数校验失败: 1 validation error for TimeSeriesParams\\n  Value error, 非法传感器指标: coolant_level（可用: ['temperature', 'pressure', 'speed', 'vibration', 'current', 'flow']） [type=value_error, input_val",
+          "error": "参数校验失败: 1 validation error for TimeSeriesParams\n  Value error, 非法传感器指标: coolant_level（可用: ['temperature', 'pressure', 'speed', 'vibration', 'current', 'flow']） [type=value_error, input_value={'bucket': '5m', 'entity_..., 'relative': 'last_3h'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "MX-006",
+      "query": "设备保养周期是多久？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 6,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "NV-001",
+      "query": "EQ-012 和 EQ-019 两台设备的轴承振动谁更严重？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 24,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-002",
+      "query": "这批货的合格率是不是掉下来了？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "quality_trace",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-003",
+      "query": "1 号数控加工中心的主轴声音不太对，帮我看看。",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-004",
+      "query": "为什么 A 产品最近表面裂纹变多了，跟设备有关系吗？",
+      "error": "OpenAITimeoutError: Request timed out.",
+      "intent_expected": "mixed",
+      "intent_actual": null,
+      "intent_hit": false,
+      "expected_agents": [
+        "equipment",
+        "quality"
+      ],
+      "agents_actual": [],
+      "expected_tools": [
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tools_called": [],
+      "tool_selection_hit": false,
+      "tool_recall": 0.0,
+      "tool_calls": 0,
+      "tool_calls_failed": [],
+      "citation_answer_hit": false,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "NV-005",
+      "query": "E102 是什么故障？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.alarm_search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 5,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "NV-006",
+      "query": "昨天 EQ-003 的温度最高到多少？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "timeseries.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "sql.alarm_search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 7,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-007",
+      "query": "A 产品的气孔缺陷最近严重吗？",
+      "intent_expected": "quality_trace",
+      "intent_actual": "quality_trace",
+      "intent_hit": true,
+      "expected_agents": [
+        "quality"
+      ],
+      "agents_actual": [
+        "quality"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 21,
+      "tool_calls_failed": [],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-008",
+      "query": "注塑机的标准保养流程是什么？",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "rag.search",
+        "sql.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 7,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    },
+    {
+      "id": "NV-009",
+      "query": "EQ-005 现在状态怎么样？",
+      "intent_expected": "equipment_diagnosis",
+      "intent_actual": "equipment_diagnosis",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "sql.query"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 16,
+      "tool_calls_failed": [
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "quality_inspections",
+            "filters": [
+              {
+                "field": "line_id",
+                "op": "=",
+                "value": "LINE-1"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_7d\"}",
+            "metrics": [
+              {
+                "func": "count",
+                "field": "*",
+                "alias": "cnt"
+              },
+              {
+                "func": "avg",
+                "field": "pass_rate",
+                "alias": "avg_pass"
+              }
+            ],
+            "limit": 20
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"聚合字段必须是数值列: pass_rate（可用: ('id', 'process_temperature', 'process_pressure')）\"}",
+          "error": "聚合字段必须是数值列: pass_rate（可用: ('id', 'process_temperature', 'process_pressure')）"
+        },
+        {
+          "tool": "sql.query",
+          "args": {
+            "dataset": "quality_inspections",
+            "filters": [
+              {
+                "field": "line_id",
+                "op": "=",
+                "value": "LINE-1"
+              }
+            ],
+            "time_range": "{\"relative\": \"last_7d\"}",
+            "metrics": [
+              {
+                "func": "count",
+                "field": "*",
+                "alias": "cnt"
+              },
+              {
+                "func": "avg",
+                "field": "process_temperature",
+                "alias": "avg_temp"
+              }
+            ],
+            "limit": 20
+          },
+          "status": "error",
+          "source": null,
+          "row_count": null,
+          "snippet": "{\"error\": \"过滤字段不在白名单: line_id\"}",
+          "error": "过滤字段不在白名单: line_id"
+        }
+      ],
+      "citation_answer_hit": null,
+      "citation_retriever_hit": null
+    },
+    {
+      "id": "NV-010",
+      "query": "分析一下 E102 报警的处理方法。",
+      "intent_expected": "knowledge_qa",
+      "intent_actual": "knowledge_qa",
+      "intent_hit": true,
+      "expected_agents": [
+        "equipment"
+      ],
+      "agents_actual": [
+        "equipment"
+      ],
+      "expected_tools": [
+        "rag.search"
+      ],
+      "tools_called": [
+        "analysis.run",
+        "rag.search",
+        "sql.alarm_search",
+        "sql.history_case",
+        "sql.query",
+        "timeseries.query"
+      ],
+      "tool_selection_hit": true,
+      "tool_recall": 1.0,
+      "tool_calls": 22,
+      "tool_calls_failed": [],
+      "citation_answer_hit": true,
+      "citation_retriever_hit": true
+    }
+  ]
+}

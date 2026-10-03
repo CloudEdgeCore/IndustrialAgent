@@ -127,4 +127,5 @@ git -c http.sslBackend=openssl -c http.proxy=http://127.0.0.1:7890 push origin m
 | 2026-10-03 | 文档诚实化：README 按实测数据重写指标与限制、`05-开发计划.md` 补 P7 阶段、`CLAUDE.md` 增加 P7 说明 | 原 README 引用的"178 passed / 三项 100% / 4.5% 不良率"与实际复现结果不符 | 对外表述与可复现证据一致 | 用户 |
 | 2026-10-03 | CI/测试独立性：`tests/conftest.py` 增加会话级知识库导入 fixture；CI 增加 `python -m tools.rag ingest` | `test_api_db.py` 断言文档数 ≥ 6，但唯一导入文档的 fixture 在字母序更晚的文件里 —— 全新数据库（CI）下必然失败 | 集成测试不再依赖执行顺序；CI 与 README 快速开始一致 | 用户 |
 | 2026-10-03 | Eval 工程化：LLM 模式支持 `--workers` 并发 + 单用例失败隔离（异常计为未命中并保留 error）+ 逐用例进度输出 | 串行 42 用例、数百次 LLM 调用在真实网络下需数十分钟；单次网络抖动被 180s 超时 ×2 重试放大成分钟级阻塞，整轮评测可能卡死且无任何输出 | 评测在抖动网络下仍可完成，且失败可定位；指标不因失败被静默丢弃 | 用户 |
-| 2026-10-03 | nginx 上游改为变量 + Docker DNS resolver 动态解析 | 静态 upstream 只在启动时解析一次 DNS，backend/frontend 容器重建换 IP 后全部请求 502（本地已复现） | 容器重建无需重启 nginx | 用户 |
+| 2026-10-03 | nginx 上游改为变量 + Docker DNS resolver 动态解析；随后修正 `location /api/` 的 URI 前缀 rewrite | 静态 upstream 只在启动时解析一次 DNS，容器重建换 IP 后全部请求 502；改变量形式后 nginx 不再自动剥离 `/api` 前缀，导致所有 API 请求落到根路由（状态码仍是 200，仅核对响应内容才发现） | 容器重建无需重启 nginx，且 `/api` 前缀正确转发 | 用户 |
+| 2026-10-03 | 修复 `defects` 数据集 `time_field` 不在自身 `columns` 内的自相矛盾；`_resolve_field` 增加**仅限时间类字段**的兜底 | defects 的任何 `time_range` 查询都必然失败并报出自我矛盾的错误；LLM 写出的未知时间列名被反复拒绝、浪费调用预算 | 数据集规格新增不变式测试（time_field / default_order_field / numeric_columns 必须在 columns 内）；白名单强度不变 | 用户 |
