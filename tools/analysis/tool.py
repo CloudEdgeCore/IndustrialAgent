@@ -37,9 +37,22 @@ def _correlation(x: np.ndarray, y: np.ndarray, method: str) -> dict:
 
 
 def _rank(values: np.ndarray) -> np.ndarray:
+    """平均秩排名（并列取平均），Spearman 相关系数要求并值处理。
+
+    原先使用序数秩（并列按出现顺序给不同秩），在存在并列时会使 Spearman 偏离真值。
+    """
     order = values.argsort()
-    ranks = np.empty_like(order, dtype=float)
+    ranks = np.empty(len(values), dtype=float)
     ranks[order] = np.arange(len(values), dtype=float)
+    sorted_values = values[order]
+    index = 0
+    while index < len(sorted_values):
+        end = index
+        while end + 1 < len(sorted_values) and sorted_values[end + 1] == sorted_values[index]:
+            end += 1
+        if end > index:
+            ranks[order[index : end + 1]] = (index + end) / 2.0
+        index = end + 1
     return ranks
 
 
@@ -127,8 +140,14 @@ def _pareto(labels: list[str], values: np.ndarray) -> dict:
         }
         for idx, i in enumerate(order)
     ]
-    vital_few = sum(1 for item in items if item["cumulative_pct"] <= 80.0) + 1
-    return {"items": items, "vital_few_count": min(vital_few, len(items))}
+    # 关键少数：累计占比首次达到 80% 的项数。
+    # 原实现为 `count(<=80) + 1`，当某项累计恰好等于 80.0 时会多算一项。
+    vital_few = len(items)
+    for index, item in enumerate(items):
+        if item["cumulative_pct"] >= 80.0:
+            vital_few = index + 1
+            break
+    return {"items": items, "vital_few_count": vital_few}
 
 
 def _group_by_stats(labels: list[str], values: np.ndarray | None) -> dict:
@@ -189,9 +208,22 @@ def analysis_run(params: AnalysisParams, ctx: ToolContext) -> ToolResult:
     else:  # pragma: no cover - pydantic 已限制枚举
         raise ToolValidationError(f"未知算子: {params.op}")
 
-    row_count = len(data) if isinstance(data, list) else None
+    # row_count：列表结果是行数；标量/字典结果是 1 条汇总记录（不为 None，
+    # 否则证据链的"行数"字段缺失，与其他工具的可追溯性要求不一致）
+    if isinstance(data, list):
+        row_count: int | None = len(data)
+    elif isinstance(data, dict):
+        row_count = 1
+    else:
+        row_count = None
     return ToolResult(
         tool="analysis.run",
         data=data,
-        meta={"op": params.op, "n": int(len(x)) if x is not None else None, "row_count": row_count},
+        meta={
+            "op": params.op,
+            "n": int(len(x)) if x is not None else None,
+            "row_count": row_count,
+            # 可追溯：说明该结果是基于调用方内联数组的算子计算（非直连数据源）
+            "source": "inline:analysis_operators",
+        },
     )

@@ -93,6 +93,62 @@ def test_pareto() -> None:
     assert data["vital_few_count"] <= 3
 
 
+def test_pareto_vital_few_at_exact_80_percent() -> None:
+    """回归：累计恰好 80.0% 时，原实现 `count(<=80)+1` 会多算一项。"""
+    data = run("pareto", labels=["a", "b"], x=[8, 2])
+    assert data["items"][0]["cumulative_pct"] == pytest.approx(80.0, abs=0.01)
+    assert data["vital_few_count"] == 1, "达到 80% 即应封口，不应再多算一项"
+
+
+def test_pareto_vital_few_when_never_reaching_80() -> None:
+    data = run("pareto", labels=["a", "b", "c"], x=[1, 1, 1])
+    assert data["items"][-1]["cumulative_pct"] == pytest.approx(100.0, abs=0.01)
+    assert data["vital_few_count"] == 3
+
+
+def test_rank_uses_average_for_ties() -> None:
+    import numpy as np
+
+    from tools.analysis.tool import _rank
+
+    assert list(_rank(np.array([1.0, 2.0, 2.0, 3.0]))) == [0.0, 1.5, 1.5, 3.0]
+
+
+def test_spearman_handles_ties() -> None:
+    """回归：序数秩在并列时给出偏高的相关系数（本例会算成 1.0）。"""
+    tied = run("correlation", x=[1, 2, 2, 3], y=[1, 2, 3, 4], method="spearman")
+    assert tied["r"] == pytest.approx(0.9487, abs=1e-3)
+    assert tied["r"] < 1.0
+
+    identical = run("correlation", x=[1, 2, 2, 3], y=[1, 2, 2, 3], method="spearman")
+    assert identical["r"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_analysis_meta_is_traceable() -> None:
+    """可追溯性：analysis.run 也必须给出 source 与 row_count。"""
+    from tools.base import ToolContext
+    from tools.executor import execute_tool
+    from tools.loader import load_all_tools
+
+    load_all_tools()
+    list_result = execute_tool(
+        "analysis.run",
+        {"op": "zscore_outliers", "x": [1.0] * 20 + [99.0]},
+        ToolContext(agent="equipment"),
+    )
+    assert isinstance(list_result.data, list)
+    assert list_result.meta["source"] == "inline:analysis_operators"
+    assert list_result.meta["row_count"] == len(list_result.data)
+
+    dict_result = execute_tool(
+        "analysis.run",
+        {"op": "describe", "x": [1.0, 2.0, 3.0]},
+        ToolContext(agent="equipment"),
+    )
+    assert dict_result.meta["source"] == "inline:analysis_operators"
+    assert dict_result.meta["row_count"] == 1, "标量/字典结果应记为 1 条，而非 None"
+
+
 def test_group_by_stats() -> None:
     data = run("group_by_stats", labels=["a", "a", "b"], x=[1, 3, 10])
     groups = {row["label"]: row for row in data["groups"]}
