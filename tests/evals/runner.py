@@ -1,18 +1,37 @@
-"""Agent Eval 评测框架：意图分类 / 工具调用成功率 / RAG 引用正确率。
+"""Agent Eval 评测框架（指标口径见下，避免循环论证）。
 
-模式：
-- 离线模式（默认）：启发式路由 + 直接执行期望工具 + 直接检索，无需 LLM Key，
-  用于 CI 与本地回归（python tests/evals/runner.py）；
-- LLM 模式：配置 LLM_API_KEY 后运行完整 Router + Agent 链路，产出真实指标
-  （python tests/evals/runner.py --llm）。
+指标定义
+--------
+1. 意图路由
+   - ``intent_acc``          ：真实 Router（LLM）产出的 task_type 与期望一致 —— **产品指标**
+   - ``heuristic_intent_acc``：关键词降级路由的准确率 —— 只代表兜底路径，**不代表 Agent 能力**
+2. 工具选择（仅 LLM 模式可测）
+   - ``tool_selection_rate`` ：期望工具集合被**完整**覆盖的用例占比（严格）
+   - ``tool_recall``         ：期望工具被实际调用的平均比例
+   - ``tool_calls_per_case`` ：平均工具调用次数（效率 / 成本信号，非越高越好）
+3. 工具调用稳定性
+   - ``tool_call_success_rate``：工具调用未报错的比例（稳定性，**不代表选对工具**）
+4. 引用
+   - ``citation_answer_rate``   ：回答可读内容命中引用关键词 **且** 实际检索过知识库（端到端）
+   - ``citation_retriever_rate``：检索器 top-k 命中关键词（检索器诊断指标）
 
-基线（CLAUDE.md §9）：意图 ≥90% · 工具 ≥95% · 引用 ≥90%。
+模式差异（重要）
+----------------
+- **离线模式**（默认，无需 LLM Key，CI 用）：只能验证
+  (a) 启发式路由准确率 (b) 期望工具的参数兼容性/可用性 (c) 检索器命中率。
+  它**不执行 Agent**，因此不能作为 Agent 质量证据 —— 报告中 ``measures_agent_behavior`` 为 False。
+- **LLM 模式**（``--llm``）：跑完整 Router + 专业 Agent 链路，产出上面第 1/2/3/4 组指标。
+
+基线（CLAUDE.md §9）：意图 ≥90% · 工具 ≥95% · 引用 ≥90%
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from agent.router.agent import heuristic_route
 from tools.base import ToolContext, ToolError
@@ -27,6 +46,19 @@ INTENT_BASELINE = 0.90
 TOOL_BASELINE = 0.95
 CITATION_BASELINE = 0.90
 
+METRIC_DEFINITIONS = {
+    "intent_acc": "LLM Router 的 task_type 准确率（产品指标）",
+    "heuristic_intent_acc": "关键词降级路由准确率（仅兜底路径，非 Agent 能力）",
+    "tool_selection_rate": "期望工具集合被完整覆盖的用例占比（严格）",
+    "tool_recall": "期望工具被实际调用的平均比例",
+    "tool_call_success_rate": "工具调用未报错比例（稳定性，不代表选对）",
+    "tool_availability_rate": "离线模式：期望工具按测试集参数可成功执行的比例",
+    "citation_answer_rate": (
+        "需要知识库支撑的用例中，回答带上知识库事实且实际检索过的比例（端到端）"
+    ),
+    "citation_retriever_rate": "检索器 top-k 命中关键词（检索器诊断）",
+}
+
 
 @dataclass
 class EvalCase:
@@ -37,6 +69,14 @@ class EvalCase:
     check_tools: list[dict] = field(default_factory=list)
     expect_citation: bool = False
     citation_keywords: list[str] = field(default_factory=list)
+    # 显式声明期望工具；缺省时取 check_tools 的工具名（空 check_tools 需显式声明）
+    expected_tools: list[str] = field(default_factory=list)
+
+    @property
+    def expected_tool_names(self) -> set[str]:
+        if self.expected_tools:
+            return set(self.expected_tools)
+        return {spec["name"] for spec in self.check_tools}
 
 
 def load_testset(path: Path = TESTSET_PATH) -> list[EvalCase]:
@@ -51,53 +91,148 @@ def load_testset(path: Path = TESTSET_PATH) -> list[EvalCase]:
 class EvalReport:
     mode: str
     total: int
+    measures_agent_behavior: bool
+    # 意图
     intent_hits: int
-    tool_total: int
-    tool_success: int
-    citation_total: int
-    citation_hits: int
-    details: list[dict]
+    heuristic_intent_hits: int
+    # 工具选择
+    tool_selection_hits: int
+    tool_selection_measured: int
+    tool_recall_sum: float
+    # 工具调用稳定性
+    tool_calls_total: int
+    tool_calls_ok: int
+    # 离线工具可用性
+    tool_availability_ok: int
+    tool_availability_total: int
+    # 引用
+    citation_answer_hits: int
+    citation_answer_total: int
+    citation_retriever_hits: int
+    citation_retriever_total: int
+    details: list[dict] = field(default_factory=list)
+
+    @staticmethod
+    def _ratio(numerator: float, denominator: float) -> float:
+        return numerator / denominator if denominator else 0.0
 
     @property
     def intent_accuracy(self) -> float:
-        return self.intent_hits / self.total if self.total else 0.0
+        return self._ratio(self.intent_hits, self.total)
 
     @property
-    def tool_success_rate(self) -> float:
-        return self.tool_success / self.tool_total if self.tool_total else 0.0
+    def heuristic_intent_accuracy(self) -> float:
+        return self._ratio(self.heuristic_intent_hits, self.total)
 
     @property
-    def citation_accuracy(self) -> float:
-        return self.citation_hits / self.citation_total if self.citation_total else 0.0
+    def tool_selection_rate(self) -> float:
+        return self._ratio(self.tool_selection_hits, self.tool_selection_measured)
+
+    @property
+    def tool_recall(self) -> float:
+        return self._ratio(self.tool_recall_sum, self.tool_selection_measured)
+
+    @property
+    def tool_call_success_rate(self) -> float:
+        return self._ratio(self.tool_calls_ok, self.tool_calls_total)
+
+    @property
+    def tool_availability_rate(self) -> float:
+        return self._ratio(self.tool_availability_ok, self.tool_availability_total)
+
+    @property
+    def tool_calls_per_case(self) -> float:
+        return self._ratio(self.tool_calls_total, self.total)
+
+    @property
+    def citation_answer_rate(self) -> float:
+        return self._ratio(self.citation_answer_hits, self.citation_answer_total)
+
+    @property
+    def citation_retriever_rate(self) -> float:
+        return self._ratio(self.citation_retriever_hits, self.citation_retriever_total)
+
+    def baseline_metrics(self) -> dict[str, float]:
+        """按模式选取与 CLAUDE.md §9 三项基线对应的指标。"""
+        if self.measures_agent_behavior:
+            return {
+                "intent": self.intent_accuracy,
+                "tool": self.tool_selection_rate,
+                "citation": self.citation_answer_rate,
+            }
+        return {
+            "intent": self.heuristic_intent_accuracy,
+            "tool": self.tool_availability_rate,
+            "citation": self.citation_retriever_rate,
+        }
 
     def meets_baseline(self) -> dict[str, bool]:
+        values = self.baseline_metrics()
         return {
-            "intent": self.intent_accuracy >= INTENT_BASELINE,
-            "tool": self.tool_success_rate >= TOOL_BASELINE,
-            "citation": self.citation_accuracy >= CITATION_BASELINE,
+            "intent": values["intent"] >= INTENT_BASELINE,
+            "tool": values["tool"] >= TOOL_BASELINE,
+            "citation": values["citation"] >= CITATION_BASELINE,
         }
 
     def summary(self) -> str:
+        if self.measures_agent_behavior:
+            return (
+                f"[{self.mode}] 意图(LLM) {self.intent_accuracy:.1%} "
+                f"({self.intent_hits}/{self.total}) | "
+                f"工具选择 {self.tool_selection_rate:.1%} "
+                f"({self.tool_selection_hits}/{self.tool_selection_measured}) | "
+                f"工具召回 {self.tool_recall:.1%} | "
+                f"调用成功率 {self.tool_call_success_rate:.1%} "
+                f"({self.tool_calls_ok}/{self.tool_calls_total}) | "
+                f"调用次数/用例 {self.tool_calls_per_case:.1f} | "
+                f"引用(端到端) {self.citation_answer_rate:.1%} "
+                f"({self.citation_answer_hits}/{self.citation_answer_total}) | "
+                f"引用(检索器) {self.citation_retriever_rate:.1%} "
+                f"({self.citation_retriever_hits}/{self.citation_retriever_total})"
+            )
         return (
-            f"[{self.mode}] 意图 {self.intent_accuracy:.1%} "
-            f"({self.intent_hits}/{self.total}) | 工具 {self.tool_success_rate:.1%} "
-            f"({self.tool_success}/{self.tool_total}) | 引用 {self.citation_accuracy:.1%} "
-            f"({self.citation_hits}/{self.citation_total})"
+            f"[{self.mode}] 意图(启发式兜底) {self.heuristic_intent_accuracy:.1%} "
+            f"({self.heuristic_intent_hits}/{self.total}) | "
+            f"工具可用性 {self.tool_availability_rate:.1%} "
+            f"({self.tool_availability_ok}/{self.tool_availability_total}) | "
+            f"引用(检索器) {self.citation_retriever_rate:.1%} "
+            f"({self.citation_retriever_hits}/{self.citation_retriever_total})"
         )
 
     def to_dict(self) -> dict:
         return {
             "mode": self.mode,
+            "measures_agent_behavior": self.measures_agent_behavior,
             "summary": self.summary(),
-            "intent_accuracy": round(self.intent_accuracy, 4),
-            "tool_success_rate": round(self.tool_success_rate, 4),
-            "citation_accuracy": round(self.citation_accuracy, 4),
+            "metric_definitions": METRIC_DEFINITIONS,
+            "metrics": {
+                "intent_acc": round(self.intent_accuracy, 4),
+                "heuristic_intent_acc": round(self.heuristic_intent_accuracy, 4),
+                "tool_selection_rate": round(self.tool_selection_rate, 4),
+                "tool_recall": round(self.tool_recall, 4),
+                "tool_call_success_rate": round(self.tool_call_success_rate, 4),
+                "tool_calls_per_case": round(self.tool_calls_per_case, 2),
+                "tool_availability_rate": round(self.tool_availability_rate, 4),
+                "citation_answer_rate": round(self.citation_answer_rate, 4),
+                "citation_retriever_rate": round(self.citation_retriever_rate, 4),
+            },
+            "baseline_metrics": {
+                key: round(value, 4) for key, value in self.baseline_metrics().items()
+            },
             "meets_baseline": self.meets_baseline(),
+            "counts": {
+                "total": self.total,
+                "tool_selection_measured": self.tool_selection_measured,
+                "tool_calls_total": self.tool_calls_total,
+                "citation_answer_total": self.citation_answer_total,
+                "citation_retriever_total": self.citation_retriever_total,
+            },
             "details": self.details,
         }
 
 
-def _citation_check(case: EvalCase) -> bool | None:
+def _retriever_citation(case: EvalCase) -> bool | None:
+    """检索器诊断指标：top-k 内容是否命中引用关键词（不涉及 Agent）。"""
     if not case.expect_citation:
         return None
     results = rag_search(case.query, top_k=3)
@@ -105,114 +240,186 @@ def _citation_check(case: EvalCase) -> bool | None:
     return any(keyword in combined for keyword in case.citation_keywords)
 
 
-def _tool_check_offline(case: EvalCase) -> list[dict]:
+def _answer_text(result: dict[str, Any]) -> str:
+    """Agent 面向用户的可读结论（结论摘要 + 异常发现 + 证据 + 最终回答）。"""
+    parts: list[str] = [str(result.get("final_answer") or "")]
+    for item in result.get("agent_results", []):
+        conclusion = item.get("conclusion") or {}
+        parts.append(str(conclusion.get("summary") or ""))
+        parts.extend(str(value) for value in conclusion.get("findings") or [])
+        for candidate in conclusion.get("root_causes") or []:
+            parts.append(str(candidate.get("cause") or ""))
+            parts.extend(str(value) for value in candidate.get("evidence") or [])
+    return " ".join(parts)
+
+
+def _needs_knowledge_grounding(case: EvalCase) -> bool:
+    """该用例是否**要求**知识库支撑（决定是否纳入端到端引用指标）。
+
+    设备/工艺/质量的纯数据问题可以不查知识库，因此不计入严格引用指标；
+    知识问答与显式期望 rag.search 的用例必须真的检索并引用知识库。
+    """
+    return (
+        "rag.search" in case.expected_tool_names
+        or case.expected_task_type == "knowledge_qa"
+    )
+
+
+def _answer_citation(case: EvalCase, result: dict[str, Any]) -> bool | None:
+    """端到端引用：既检索了知识库，关键词又真的进入了回答。
+
+    仅对"要求知识库支撑"的用例计分；其余用例返回 None（不纳入分母）。
+    """
+    if not case.expect_citation or not _needs_knowledge_grounding(case):
+        return None
+    called_rag = any(
+        item.get("tool") == "rag.search" for item in result.get("tool_results", [])
+    )
+    text = _answer_text(result)
+    return called_rag and any(keyword in text for keyword in case.citation_keywords)
+
+
+def _run_offline_case(case: EvalCase) -> dict:
+    """离线：期望工具的参数兼容性 + 启发式路由 + 检索器命中（不执行 Agent）。"""
     agent = case.expected_agents[0] if case.expected_agents else "equipment"
-    outcomes: list[dict] = []
+    tool_outcomes: list[dict] = []
     for spec in case.check_tools:
         try:
             execute_tool(spec["name"], spec.get("args") or {}, ToolContext(agent=agent))
-            outcomes.append({"tool": spec["name"], "ok": True})
+            tool_outcomes.append({"tool": spec["name"], "ok": True})
         except ToolError as exc:
-            outcomes.append({"tool": spec["name"], "ok": False, "error": str(exc)})
-    return outcomes
+            tool_outcomes.append({"tool": spec["name"], "ok": False, "error": str(exc)})
+
+    decision = heuristic_route(case.query)
+    return {
+        "id": case.id,
+        "intent_expected": case.expected_task_type,
+        "heuristic_intent_actual": decision.task_type,
+        "heuristic_intent_hit": decision.task_type == case.expected_task_type,
+        "tool_outcomes": tool_outcomes,
+        "citation_retriever_hit": _retriever_citation(case),
+    }
 
 
 def run_offline_eval(cases: list[EvalCase] | None = None) -> EvalReport:
+    """离线评测：不执行 Agent，只验证兜底路由 / 工具可用性 / 检索器。"""
     load_all_tools()
-    cases = cases or load_testset()
-    intent_hits = 0
-    tool_total = tool_success = 0
-    citation_total = citation_hits = 0
-    details: list[dict] = []
-
-    for case in cases:
-        decision = heuristic_route(case.query)
-        intent_hit = decision.task_type == case.expected_task_type
-        intent_hits += int(intent_hit)
-
-        outcomes = _tool_check_offline(case)
-        tool_total += len(outcomes)
-        tool_success += sum(1 for item in outcomes if item["ok"])
-
-        citation_hit = _citation_check(case)
-        if citation_hit is not None:
-            citation_total += 1
-            citation_hits += int(citation_hit)
-
-        details.append(
-            {
-                "id": case.id,
-                "intent_expected": case.expected_task_type,
-                "intent_actual": decision.task_type,
-                "intent_hit": intent_hit,
-                "tools": outcomes,
-                "citation_hit": citation_hit,
-            }
-        )
-
-    return EvalReport(
+    if cases is None:
+        cases = load_testset()
+    report = EvalReport(
         mode="offline",
         total=len(cases),
-        intent_hits=intent_hits,
-        tool_total=tool_total,
-        tool_success=tool_success,
-        citation_total=citation_total,
-        citation_hits=citation_hits,
-        details=details,
+        measures_agent_behavior=False,
+        intent_hits=0,
+        heuristic_intent_hits=0,
+        tool_selection_hits=0,
+        tool_selection_measured=0,
+        tool_recall_sum=0.0,
+        tool_calls_total=0,
+        tool_calls_ok=0,
+        tool_availability_ok=0,
+        tool_availability_total=0,
+        citation_answer_hits=0,
+        citation_answer_total=0,
+        citation_retriever_hits=0,
+        citation_retriever_total=0,
     )
+    for case in cases:
+        detail = _run_offline_case(case)
+        report.heuristic_intent_hits += int(detail["heuristic_intent_hit"])
+        for outcome in detail["tool_outcomes"]:
+            report.tool_availability_total += 1
+            report.tool_availability_ok += int(outcome["ok"])
+        if detail["citation_retriever_hit"] is not None:
+            report.citation_retriever_total += 1
+            report.citation_retriever_hits += int(detail["citation_retriever_hit"])
+        report.details.append(detail)
+
+    baseline = report.meets_baseline()
+    if not all(baseline.values()):
+        report.details.append({"note": "基线未达标项", "baseline": baseline})
+    return report
 
 
-def run_llm_eval(cases: list[EvalCase] | None = None, model=None) -> EvalReport:
-    """LLM 模式：完整 Router + Agent 链路（需 LLM_API_KEY）。"""
-    from agent.llm import get_chat_model
+def _run_llm_case(case: EvalCase, model: Any) -> dict:
+    """LLM：完整 Router + 专业 Agent 链路。"""
     from agent.runner import run_agent
+
+    result = run_agent(case.query, model=model)
+    expected = case.expected_tool_names
+    called = [item.get("tool") for item in result.get("tool_results", [])]
+    called_set = {name for name in called if name}
+    covered = expected <= called_set
+    recall = len(expected & called_set) / len(expected) if expected else 1.0
+
+    return {
+        "id": case.id,
+        "intent_expected": case.expected_task_type,
+        "intent_actual": result.get("task_type"),
+        "intent_hit": result.get("task_type") == case.expected_task_type,
+        "expected_agents": case.expected_agents,
+        "agents_actual": result.get("agents", []),
+        "expected_tools": sorted(expected),
+        "tools_called": sorted(called_set),
+        "tool_selection_hit": covered,
+        "tool_recall": round(recall, 4),
+        "tool_calls": len(called),
+        "tool_calls_failed": [
+            item
+            for item in result.get("tool_results", [])
+            if item.get("status") != "done"
+        ],
+        "citation_answer_hit": _answer_citation(case, result),
+        "citation_retriever_hit": _retriever_citation(case),
+    }
+
+
+def run_llm_eval(cases: list[EvalCase] | None = None, model: Any = None) -> EvalReport:
+    """LLM 模式：完整 Agent 链路（需 LLM_API_KEY）。"""
+    from agent.llm import get_chat_model
 
     model = model or get_chat_model()
     load_all_tools()
-    cases = cases or load_testset()
-    intent_hits = 0
-    tool_total = tool_success = 0
-    citation_total = citation_hits = 0
-    details: list[dict] = []
-
-    for case in cases:
-        result = run_agent(case.query, model=model)
-        intent_hit = result.get("task_type") == case.expected_task_type
-        intent_hits += int(intent_hit)
-
-        outcomes = [
-            {"tool": item["tool"], "ok": item["status"] == "done"}
-            for item in result.get("tool_results", [])
-        ]
-        tool_total += len(outcomes)
-        tool_success += sum(1 for item in outcomes if item["ok"])
-
-        citation_hit = _citation_check(case)
-        if citation_hit is not None:
-            citation_total += 1
-            citation_hits += int(citation_hit)
-
-        details.append(
-            {
-                "id": case.id,
-                "intent_expected": case.expected_task_type,
-                "intent_actual": result.get("task_type"),
-                "intent_hit": intent_hit,
-                "tools": outcomes,
-                "citation_hit": citation_hit,
-            }
-        )
-
-    return EvalReport(
+    if cases is None:
+        cases = load_testset()
+    report = EvalReport(
         mode="llm",
         total=len(cases),
-        intent_hits=intent_hits,
-        tool_total=tool_total,
-        tool_success=tool_success,
-        citation_total=citation_total,
-        citation_hits=citation_hits,
-        details=details,
+        measures_agent_behavior=True,
+        intent_hits=0,
+        heuristic_intent_hits=0,
+        tool_selection_hits=0,
+        tool_selection_measured=0,
+        tool_recall_sum=0.0,
+        tool_calls_total=0,
+        tool_calls_ok=0,
+        tool_availability_ok=0,
+        tool_availability_total=0,
+        citation_answer_hits=0,
+        citation_answer_total=0,
+        citation_retriever_hits=0,
+        citation_retriever_total=0,
     )
+    for case in cases:
+        detail = _run_llm_case(case, model)
+        report.intent_hits += int(detail["intent_hit"])
+        report.heuristic_intent_hits += int(
+            heuristic_route(case.query).task_type == case.expected_task_type
+        )
+        if detail["expected_tools"]:
+            report.tool_selection_measured += 1
+            report.tool_selection_hits += int(detail["tool_selection_hit"])
+            report.tool_recall_sum += float(detail["tool_recall"])
+        report.tool_calls_total += detail["tool_calls"]
+        report.tool_calls_ok += detail["tool_calls"] - len(detail["tool_calls_failed"])
+        if detail["citation_answer_hit"] is not None:
+            report.citation_answer_total += 1
+            report.citation_answer_hits += int(detail["citation_answer_hit"])
+        if detail["citation_retriever_hit"] is not None:
+            report.citation_retriever_total += 1
+            report.citation_retriever_hits += int(detail["citation_retriever_hit"])
+        report.details.append(detail)
+    return report
 
 
 def save_report(report: EvalReport, path: Path = REPORT_PATH) -> Path:
@@ -220,6 +427,32 @@ def save_report(report: EvalReport, path: Path = REPORT_PATH) -> Path:
         json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return path
+
+
+def _print_failures(report: EvalReport) -> None:
+    for item in report.details:
+        if "note" in item:
+            print("  ", item)
+            continue
+        if report.measures_agent_behavior:
+            problems = []
+            if not item.get("intent_hit"):
+                problems.append(f"意图={item.get('intent_actual')}(期望 {item['intent_expected']})")
+            if item.get("expected_tools") and not item.get("tool_selection_hit"):
+                problems.append(
+                    f"工具缺失 {sorted(set(item['expected_tools']) - set(item['tools_called']))}"
+                )
+            if item.get("tool_calls_failed"):
+                problems.append(f"调用失败 {item['tool_calls_failed']}")
+            if item.get("citation_answer_hit") is False:
+                problems.append("端到端引用未命中")
+            if problems:
+                print(f"  用例 {item['id']}: " + "; ".join(problems))
+        elif not item.get("heuristic_intent_hit"):
+            print(
+                f"  用例 {item['id']}: 启发式路由={item.get('heuristic_intent_actual')} "
+                f"(期望 {item['intent_expected']})"
+            )
 
 
 def main() -> None:
@@ -233,11 +466,11 @@ def main() -> None:
         cases = cases[: args.limit]
     report = run_llm_eval(cases) if args.llm else run_offline_eval(cases)
     print(report.summary())
-    print("基线:", report.meets_baseline())
-    for item in report.details:
-        if not item["intent_hit"] or any(not t["ok"] for t in item["tools"]):
-            print(f"  用例 {item['id']}: intent={item['intent_actual']} "
-                  f"(期望 {item['intent_expected']}), tools={item['tools']}")
+    print("基线指标:", {k: round(v, 4) for k, v in report.baseline_metrics().items()})
+    print("是否达标:", report.meets_baseline())
+    if not report.measures_agent_behavior:
+        print("注意: 离线模式不执行 Agent，不能作为 Agent 质量证据（用 --llm）")
+    _print_failures(report)
     print("报告 ->", save_report(report))
 
 
