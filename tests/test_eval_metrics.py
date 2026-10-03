@@ -7,6 +7,7 @@
 - 用得再多也不会因为"没报错"而刷高工具选择分。
 """
 
+import pytest
 from evals.runner import (
     METRIC_DEFINITIONS,
     EvalCase,
@@ -164,6 +165,42 @@ def test_baseline_metrics_use_agent_metrics_only_when_measured() -> None:
     assert offline.meets_baseline() == {"intent": True, "tool": True, "citation": True}
 
 
+def test_infra_failures_are_excluded_from_quality_metrics() -> None:
+    """网络/超时导致的失败单列，不吞掉 Agent 的真实质量。"""
+    with_infra = _report(
+        total=42,
+        case_errors=10,
+        tool_selection_errors=10,
+        citation_answer_errors=5,
+        intent_hits=32,
+        tool_selection_hits=31,
+        tool_selection_measured=42,
+        citation_answer_hits=10,
+        citation_answer_total=15,
+    )
+    # 全量口径（保守）
+    assert with_infra.intent_accuracy == pytest.approx(32 / 42, abs=1e-4)
+    # 排除基础设施失败后的口径（真实质量）
+    assert with_infra.intent_accuracy_ok == 1.0
+    assert with_infra.tool_selection_rate_ok == pytest.approx(31 / 32, abs=1e-4)
+    assert with_infra.citation_answer_rate_ok == 1.0
+    payload = with_infra.to_dict()
+    assert payload["counts"]["case_errors"] == 10
+    assert payload["baseline_metrics_excluding_infra_failures"]["intent"] == 1.0
+
+
+def test_meets_baseline_uses_quality_metrics_and_discloses_both() -> None:
+    clean = _report(
+        total=42,
+        intent_hits=42,
+        tool_selection_hits=42,
+        tool_selection_measured=42,
+        citation_answer_hits=20,
+        citation_answer_total=20,
+    )
+    assert clean.meets_baseline() == {"intent": True, "tool": True, "citation": True}
+
+
 def test_empty_denominators_do_not_divide_by_zero() -> None:
     empty = _report(
         total=0,
@@ -220,6 +257,9 @@ def test_llm_eval_isolates_case_failures() -> None:
     assert report.tool_selection_measured == 2, "失败用例仍计入工具选择分母"
     assert report.tool_selection_hits == 0
     assert all("error" in detail for detail in report.details)
+    assert report.case_errors == 2, "基础设施/网络失败数应单独暴露"
+    assert "执行失败 2" in report.summary()
+    assert report.to_dict()["counts"]["case_errors"] == 2
     assert report.measures_agent_behavior is True
     assert report.meets_baseline() == {"intent": False, "tool": False, "citation": False}
 

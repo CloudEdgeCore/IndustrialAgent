@@ -117,11 +117,10 @@ def data_freshness(force_refresh: bool = False) -> Freshness:
     """带 TTL 缓存的新鲜度快照（工具层与 API 层共用的唯一入口）。"""
     global _cached, _cached_at
     with _cache_lock:
-        fresh = _cached is not None and (time.monotonic() - _cached_at) < _CACHE_TTL_SECONDS
-        if force_refresh or not fresh:
+        expired = (time.monotonic() - _cached_at) >= _CACHE_TTL_SECONDS
+        if force_refresh or _cached is None or expired:
             _cached = compute_freshness()
             _cached_at = time.monotonic()
-        assert _cached is not None
         return _cached
 
 

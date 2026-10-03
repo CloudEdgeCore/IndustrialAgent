@@ -200,8 +200,22 @@ def make_node(model: BaseChatModel):
             final_answer = f"报告生成失败：{exc}"
 
         emit_step("生成报告", status=status, tool="report.generate")
+        # 报告生成也是一次工具调用，必须进入 tool_results —— 否则证据链里看不到它，
+        # 依赖 tool_results 统计"实际调用了哪些工具"的评测也会把它误判为漏调。
+        tool_results = [
+            {
+                "tool": "report.generate",
+                "args": {"report_type": report_type, "title": title},
+                "status": status,
+                "source": "postgres:reports",
+                "row_count": 1 if report else None,
+                "snippet": "",
+                "error": None if status == "done" else final_answer,
+            }
+        ]
         return {
             "report": report,
+            "tool_results": tool_results,
             "steps": [
                 {"label": "生成报告", "tool": "report.generate", "status": status}
             ],

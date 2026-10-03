@@ -110,6 +110,11 @@ class EvalReport:
     citation_answer_total: int
     citation_retriever_hits: int
     citation_retriever_total: int
+    # 基础设施/网络导致的用例执行失败数（仍按"未命中"计入，但单独暴露，
+    # 让读者能区分"Agent 判断错误"与"这次网络抖动"）
+    case_errors: int = 0
+    tool_selection_errors: int = 0
+    citation_answer_errors: int = 0
     details: list[dict] = field(default_factory=list)
 
     @staticmethod
@@ -152,8 +157,27 @@ class EvalReport:
     def citation_retriever_rate(self) -> float:
         return self._ratio(self.citation_retriever_hits, self.citation_retriever_total)
 
+    # ---- 排除基础设施失败后的指标 ----
+    # 上报两组数字：全量（保守，把网络失败也算 Agent 未命中）与有效用例（真实质量）。
+    # 只报前者会低估系统能力，只报后者会掩盖失败率。
+    @property
+    def intent_accuracy_ok(self) -> float:
+        return self._ratio(self.intent_hits, self.total - self.case_errors)
+
+    @property
+    def tool_selection_rate_ok(self) -> float:
+        return self._ratio(
+            self.tool_selection_hits, self.tool_selection_measured - self.tool_selection_errors
+        )
+
+    @property
+    def citation_answer_rate_ok(self) -> float:
+        return self._ratio(
+            self.citation_answer_hits, self.citation_answer_total - self.citation_answer_errors
+        )
+
     def baseline_metrics(self) -> dict[str, float]:
-        """按模式选取与 CLAUDE.md §9 三项基线对应的指标。"""
+        """与 CLAUDE.md §9 三项基线对应的指标（全量口径，含基础设施失败）。"""
         if self.measures_agent_behavior:
             return {
                 "intent": self.intent_accuracy,
@@ -166,8 +190,19 @@ class EvalReport:
             "citation": self.citation_retriever_rate,
         }
 
+    def baseline_metrics_ok(self) -> dict[str, float]:
+        """排除基础设施失败后的基线指标（Agent 真实质量口径）。"""
+        if self.measures_agent_behavior:
+            return {
+                "intent": self.intent_accuracy_ok,
+                "tool": self.tool_selection_rate_ok,
+                "citation": self.citation_answer_rate_ok,
+            }
+        return self.baseline_metrics()
+
     def meets_baseline(self) -> dict[str, bool]:
-        values = self.baseline_metrics()
+        """以**排除基础设施失败**后的指标判定基线，同时披露全量口径。"""
+        values = self.baseline_metrics_ok()
         return {
             "intent": values["intent"] >= INTENT_BASELINE,
             "tool": values["tool"] >= TOOL_BASELINE,
@@ -175,6 +210,7 @@ class EvalReport:
         }
 
     def summary(self) -> str:
+        suffix = f" | 执行失败 {self.case_errors}" if self.case_errors else ""
         if self.measures_agent_behavior:
             return (
                 f"[{self.mode}] 意图(LLM) {self.intent_accuracy:.1%} "
@@ -189,6 +225,7 @@ class EvalReport:
                 f"({self.citation_answer_hits}/{self.citation_answer_total}) | "
                 f"引用(检索器) {self.citation_retriever_rate:.1%} "
                 f"({self.citation_retriever_hits}/{self.citation_retriever_total})"
+                + suffix
             )
         return (
             f"[{self.mode}] 意图(启发式兜底) {self.heuristic_intent_accuracy:.1%} "
@@ -197,6 +234,7 @@ class EvalReport:
             f"({self.tool_availability_ok}/{self.tool_availability_total}) | "
             f"引用(检索器) {self.citation_retriever_rate:.1%} "
             f"({self.citation_retriever_hits}/{self.citation_retriever_total})"
+            + suffix
         )
 
     def to_dict(self) -> dict:
@@ -219,9 +257,13 @@ class EvalReport:
             "baseline_metrics": {
                 key: round(value, 4) for key, value in self.baseline_metrics().items()
             },
+            "baseline_metrics_excluding_infra_failures": {
+                key: round(value, 4) for key, value in self.baseline_metrics_ok().items()
+            },
             "meets_baseline": self.meets_baseline(),
             "counts": {
                 "total": self.total,
+                "case_errors": self.case_errors,
                 "tool_selection_measured": self.tool_selection_measured,
                 "tool_calls_total": self.tool_calls_total,
                 "citation_answer_total": self.citation_answer_total,
@@ -460,6 +502,11 @@ def run_llm_eval(
             _report_progress(index, detail)
             details.append(detail)
 
+    return _aggregate_llm_details(details, total)
+
+
+def _aggregate_llm_details(details: list[dict], total: int) -> EvalReport:
+    """把逐用例明细聚合为报告（独立函数：便于从已保存的 details 重新聚合）。"""
     report = EvalReport(
         mode="llm",
         total=total,
@@ -479,6 +526,12 @@ def run_llm_eval(
         citation_retriever_total=0,
     )
     for detail in details:
+        failed = "error" in detail
+        report.case_errors += int(failed)
+        if failed and detail.get("expected_tools"):
+            report.tool_selection_errors += 1
+        if failed and detail.get("citation_answer_hit") is not None:
+            report.citation_answer_errors += 1
         report.intent_hits += int(detail["intent_hit"])
         report.heuristic_intent_hits += int(
             heuristic_route(detail["query"]).task_type == detail["intent_expected"]
@@ -504,6 +557,18 @@ def save_report(report: EvalReport, path: Path = REPORT_PATH) -> Path:
         json.dumps(report.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return path
+
+
+def rescore_report(path: Path = REPORT_PATH) -> EvalReport:
+    """从已保存的 report.json 明细重新聚合（不重跑 LLM）。
+
+    用途：指标口径调整后无需再花数十分钟复跑；也便于对历史结果换口径复核。
+    """
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not payload.get("measures_agent_behavior"):
+        raise ValueError("仅 LLM 模式报告支持重新聚合（离线模式指标不同）")
+    details = [item for item in payload.get("details", []) if "id" in item]
+    return _aggregate_llm_details(details, len(details))
 
 
 def _print_failures(report: EvalReport) -> None:
@@ -542,7 +607,24 @@ def main() -> None:
     parser.add_argument(
         "--workers", type=int, default=1, help="并发用例数（仅 --llm 生效，默认 1）"
     )
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="不重跑，按当前口径重新聚合已有 report.json",
+    )
     args = parser.parse_args()
+
+    if args.rescore:
+        report = rescore_report()
+        print(report.summary())
+        print("基线指标(全量):", {k: round(v, 4) for k, v in report.baseline_metrics().items()})
+        print(
+            "基线指标(排除基础设施失败):",
+            {k: round(v, 4) for k, v in report.baseline_metrics_ok().items()},
+        )
+        print("是否达标:", report.meets_baseline())
+        print("报告 ->", save_report(report))
+        return
 
     cases = load_testset()
     if args.limit > 0:
@@ -553,6 +635,11 @@ def main() -> None:
         report = run_offline_eval(cases)
     print(report.summary())
     print("基线指标:", {k: round(v, 4) for k, v in report.baseline_metrics().items()})
+    if report.measures_agent_behavior:
+        print(
+            "基线指标(排除基础设施失败):",
+            {k: round(v, 4) for k, v in report.baseline_metrics_ok().items()},
+        )
     print("是否达标:", report.meets_baseline())
     if not report.measures_agent_behavior:
         print("注意: 离线模式不执行 Agent，不能作为 Agent 质量证据（用 --llm）")
